@@ -142,7 +142,7 @@ protocol Bha23_[[5,1,3]]:
         bit s  = 0;
         bit f  = 0;
         bit sb = ⊥;
-        mr  m  = [];
+        mr  m  = mr[];
 
     tc:
         1: (s == 1) and (f == 0)
@@ -153,20 +153,20 @@ protocol Bha23_[[5,1,3]]:
         while(!tc) {
             if ((s == 0) and (f == 0)) {
                 switch(n) {
-                    0: {s,f} = XZZXI_f();
-                    1: {s,f} = IXZZX_f();
-                    2: {s,f} = XIXZZ_f();
-                    3: {s,f} = ZXIXZ_f();
+                    0: { (s,f) = XZZXI_f(); }
+                    1: { (s,f) = IXZZX_f(); }
+                    2: { (s,f) = XIXZZ_f(); }
+                    3: { (s,f) = ZXIXZ_f(); }
                 }
                 m.push({s,f});
                 n += 1;
 
             } else { // (s,f) = (0,1) or (1,0)
                 switch(n) {
-                    1: { s = XZZXI_b(); sb = YXXYI_b(); }
-                    2: { s = IXZZX_b(); sb = IYXXY_b(); }
-                    3: { s = XIXZZ_b(); sb = YIYXX_b(); }
-                    4: { s = ZXIXZ_b(); sb = YZIZY_b(); }
+                    1: { (s,) = XZZXI_b(); (sb,) = YXXYI_b(); }
+                    2: { (s,) = IXZZX_b(); (sb,) = IYXXY_b(); }
+                    3: { (s,) = XIXZZ_b(); (sb,) = YIYXX_b(); }
+                    4: { (s,) = ZXIXZ_b(); (sb,) = YZIZY_b(); }
                 }
                 m.push(s);
                 m.push(sb);
@@ -175,27 +175,37 @@ protocol Bha23_[[5,1,3]]:
 
     tp:
         1: { 
-            m.push(FSE_b());
+            bit[4] s_full = ⊥;
+            (s_full,) = FSE_b();
+            m.push(s_full);
             decode(m);
         }
     
         2: {
             switch(n) {
                 1: { 
-                    if (sb == 1) { m.push(ZIZYY_b()); }
-                    else { m.push(XIXZZ_b()); } 
+                    bit s_next = ⊥;
+                    if (sb == 1) { (s_next,) = ZIZYY_b(); }
+                    else { (s_next,) = XIXZZ_b(); }
+                    m.push(s_next);
                 }
                 2: { 
-                    if (sb == 1) { m.push(YZIZY_b()); }
-                    else { m.push(ZXIXZ_b()); } 
+                    bit s_next = ⊥;
+                    if (sb == 1) { (s_next,) = YZIZY_b(); }
+                    else { (s_next,) = ZXIXZ_b(); }
+                    m.push(s_next);
                 }
                 3: { 
-                    if (sb == 1) { m.push(YZIZY_b()); }
-                    else { m.push(ZXIXZ_b()); } 
+                    bit s_next = ⊥;
+                    if (sb == 1) { (s_next,) = YZIZY_b(); }
+                    else { (s_next,) = ZXIXZ_b(); }
+                    m.push(s_next);
                 }
                 4: { 
-                    if (sb == 1) { m.push(YIYXX_b()); }
-                    else { m.push(XIXZZ_b()); } 
+                    bit s_next = ⊥;
+                    if (sb == 1) { (s_next,) = YIYXX_b(); }
+                    else { (s_next,) = XIXZZ_b(); }
+                    m.push(s_next);
                 }
             }
             decode(m);
@@ -204,6 +214,3 @@ protocol Bha23_[[5,1,3]]:
         3: {
             end();
         }
-
-
-

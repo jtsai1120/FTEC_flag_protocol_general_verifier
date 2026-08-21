@@ -92,25 +92,26 @@ protocol LL25_[[19,1,5]]:
 
     af:
         while (!tc) {
-            if (m1 == ⊥) { {m1, f1} = FSE_f(); }
-            else if (f2 == ⊥) { {m2, f2} = FSE_f(); }
-            else { {m3, f3} = FSE_f(); }
+            if (m1 == ⊥) { (m1, f1) = FSE_f(); }
+            else if (f2 == ⊥) { (m2, f2) = FSE_f(); }
+            else { (m3, f3) = FSE_f(); }
         }
 
     tp:
         1: {}
 
         2: {
-            m3 = FSE_b();
-            decode([m1, f1, m2, f2, m3]);
+            (m3,) = FSE_b();
+            decode(mr[m1, f1, m2, f2, m3]);
         }
 
         3: {
             if ((m2 == 0) and (m3 == 0) and (f3 == 0)) {
-                decode([m1, f1, m2, f2, m3, f3]);
+                decode(mr[m1, f1, m2, f2, m3, f3]);
             } 
             else {
-                bit[18] m4 = FSE_b();
-                decode([m1, f1, m2, f2, m3, f3, m4]);
+                bit[18] m4 = ⊥;
+                (m4,) = FSE_b();
+                decode(mr[m1, f1, m2, f2, m3, f3, m4]);
             }
         }

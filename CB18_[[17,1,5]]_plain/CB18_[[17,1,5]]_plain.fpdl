@@ -79,7 +79,7 @@ protocol CB_18_[[17,1,5]]_plain:
 
         bit[16] s_prev     = ⊥;
         bit     diff_prev  = 0;
-        mr      m          = [];
+        mr      m          = mr[];
 
     tc:
         1: ((n_c_same == 3 - n_diff - 1 and n_c_same != 0) and n_flag == 0)
@@ -93,7 +93,7 @@ protocol CB_18_[[17,1,5]]_plain:
             bit[16]  s  = ⊥;
             bit[20]  f  = ⊥;
 
-            {s, f} = FSE_f();
+            (s, f) = FSE_f();
 
             if (f != 0) { 
                 n_c_same  = 0;
@@ -134,21 +134,26 @@ protocol CB_18_[[17,1,5]]_plain:
 
     tp:
         1: { 
-            decode([s_prev]); 
+            decode(mr[s_prev]);
         }
         2: { 
-            decode([FSE_b()]); 
+            bit[16] s = ⊥;
+            (s,) = FSE_b();
+            decode(mr[s]);
         }
         3: { 
-            m.push(FSE_b());
+            bit[16] s = ⊥;
+            (s,) = FSE_b();
+            m.push(s);
             decode(m); 
         }
         4: {
-            m.push(FSE_b());
+            bit[16] s = ⊥;
+            (s,) = FSE_b();
+            m.push(s);
             decode(m); 
         }
         5: {
             m.push(s_prev);
             decode(m); 
         }
-        
