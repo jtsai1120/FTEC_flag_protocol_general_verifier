@@ -1,0 +1,24 @@
+digraph protocol_dag {
+  graph [rankdir=TB, bgcolor="#f6f8fc", pad=0.4, nodesep=0.45, ranksep=0.9, labelloc=t, label="LL25_[[19,1,5]] · control-flow DAG"];
+  node [shape=box, style="rounded,filled", fontname="Menlo", fontsize=10, color="#3973cf", fillcolor="#e7f0ff"];
+  edge [color="#7b879b", fontname="Menlo", fontsize=9];
+  n0 [label="START\nLL25_[[19,1,5]]", shape=oval, color="#172033", fillcolor="#172033", fontcolor=white];
+  n1 [label="State 1 · FSE_f\nQASM: ./FSE_f.qasm\ndata: m · flag: f\nRound 1 · af #1"];
+  n2 [label="Path #0\nend · tc 1 / tp 1\n1 rounds · 5 transitions", color="#258a55", fillcolor="#e5f7ed"];
+  n3 [label="State 3 · FSE_f\nQASM: ./FSE_f.qasm\ndata: m · flag: f\nRound 2 · af #1"];
+  n4 [label="State 4 · FSE_b\nQASM: ./FSE_b.qasm\ndata: m · flag: none\nRound 2 · tp #1"];
+  n5 [label="Path #1\ndecode · tc 2 / tp 2\n2 rounds · 9 transitions\ndecode record: mr[id_1.s, id_1.f, id_2.s, id_2.f, id_3.s]", color="#258a55", fillcolor="#e5f7ed"];
+  n6 [label="State 6 · FSE_f\nQASM: ./FSE_f.qasm\ndata: m · flag: f\nRound 3 · af #1"];
+  n7 [label="Path #2\ndecode · tc 3 / tp 3\n3 rounds · 12 transitions\ndecode record: mr[id_1.s, id_1.f, 0, id_2.f, 0, 0]", color="#258a55", fillcolor="#e5f7ed"];
+  n8 [label="State 8 · FSE_b\nQASM: ./FSE_b.qasm\ndata: m · flag: none\nRound 3 · tp #1"];
+  n9 [label="Path #3\ndecode · tc 3 / tp 3\n3 rounds · 14 transitions\ndecode record: mr[id_1.s, id_1.f, id_2.s, id_2.f, id_3.s, id_3.f, id_4.s]", color="#258a55", fillcolor="#e5f7ed"];
+  n0 -> n1 [label="true"];
+  n1 -> n2 [label="(id_1.s) == (0)\nAND (id_1.f) == (0)"];
+  n1 -> n3 [label="NOT (((id_1.s) == (0)) and ((id_1.f) == (0)))"];
+  n3 -> n4 [label="NOT ((id_2.f) == (0))"];
+  n3 -> n6 [label="NOT ((true) and ((id_2.f) != (0)))"];
+  n4 -> n5 [label="true"];
+  n6 -> n7 [label="(id_2.s) == (0)\nAND (id_3.s) == (0)\nAND (id_3.f) == (0)"];
+  n6 -> n8 [label="NOT ((((id_2.s) == (0)) and ((id_3.s) == (0))) and ((id_3.f) == (0)))"];
+  n8 -> n9 [label="true"];
+}

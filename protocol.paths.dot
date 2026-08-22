@@ -1,0 +1,36 @@
+digraph symbolic_paths {
+  graph [rankdir=TB, bgcolor="#f6f8fc", pad=0.4, nodesep=0.35, ranksep=0.65, labelloc=t, label="LL25_[[19,1,5]]\n4 of 4 symbolic paths"];
+  node [shape=box, style="rounded,filled", fontname="Menlo", fontsize=10, color="#3973cf", fillcolor="#e7f0ff"];
+  edge [color="#8290a7", arrowsize=0.7];
+  n0 [label="START\nLL25_[[19,1,5]]", shape=oval, color="#172033", fillcolor="#172033", fontcolor=white];
+  n1 [label="Round 1 · af #1\nFSE_f\ns = id_1.s\nf = id_1.f"];
+  n2 [label="BRANCH\n(id_1.s) == (0)\nAND (id_1.f) == (0)", shape=diamond, color="#c47b14", fillcolor="#fff3d6"];
+  n3 [label="Path #0\nend · tc 1 / tp 1\n1 rounds · 5 transitions", color="#258a55", fillcolor="#e5f7ed"];
+  n4 [label="BRANCH\nNOT (((id_1.s) == (0)) and ((id_1.f) == (0)))", shape=diamond, color="#c47b14", fillcolor="#fff3d6"];
+  n5 [label="Round 2 · af #1\nFSE_f\ns = id_2.s\nf = id_2.f"];
+  n6 [label="BRANCH\nNOT ((id_2.f) == (0))", shape=diamond, color="#c47b14", fillcolor="#fff3d6"];
+  n7 [label="Round 2 · tp #1\nFSE_b\ns = id_3.s"];
+  n8 [label="Path #1\ndecode · tc 2 / tp 2\n2 rounds · 9 transitions", color="#258a55", fillcolor="#e5f7ed"];
+  n9 [label="BRANCH\nNOT ((true) and ((id_2.f) != (0)))", shape=diamond, color="#c47b14", fillcolor="#fff3d6"];
+  n10 [label="Round 3 · af #1\nFSE_f\ns = id_3.s\nf = id_3.f"];
+  n11 [label="BRANCH\n(id_2.s) == (0)\nAND (id_3.s) == (0)\nAND (id_3.f) == (0)", shape=diamond, color="#c47b14", fillcolor="#fff3d6"];
+  n12 [label="Path #2\ndecode · tc 3 / tp 3\n3 rounds · 12 transitions", color="#258a55", fillcolor="#e5f7ed"];
+  n13 [label="BRANCH\nNOT ((((id_2.s) == (0)) and ((id_3.s) == (0))) and ((id_3.f) == (0)))", shape=diamond, color="#c47b14", fillcolor="#fff3d6"];
+  n14 [label="Round 3 · tp #1\nFSE_b\ns = id_4.s"];
+  n15 [label="Path #3\ndecode · tc 3 / tp 3\n3 rounds · 14 transitions", color="#258a55", fillcolor="#e5f7ed"];
+  n0 -> n1;
+  n1 -> n2;
+  n1 -> n4;
+  n2 -> n3;
+  n4 -> n5;
+  n5 -> n6;
+  n5 -> n9;
+  n6 -> n7;
+  n7 -> n8;
+  n9 -> n10;
+  n10 -> n11;
+  n10 -> n13;
+  n11 -> n12;
+  n13 -> n14;
+  n14 -> n15;
+}

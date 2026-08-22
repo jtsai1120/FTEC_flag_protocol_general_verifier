@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <memory>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -264,7 +265,7 @@ public:
         auto paths = expand_paths(root);
         for (std::size_t i = 0; i < paths.size(); ++i) paths[i].id = i;
         diagnostics_.push_back({Diagnostic::Severity::Warning, start,
-            "symbolic constraints are not SMT-solved; only constant and exact-opposite branches are pruned"});
+            "propositional Boolean constraints are SAT-checked, but bit-vector relations are not SMT-solved"});
         return {protocol_name, std::move(paths), std::move(diagnostics_), truncated_};
     }
 
@@ -437,6 +438,9 @@ private:
             }
         }
         se_arity_[name.text] = arity;
+        se_files_[name.text] = file;
+        se_data_registers_[name.text] = cm;
+        if (!cf.empty()) se_flag_registers_[name.text] = cf;
         if (!signature_edges.empty()) {
             fields.push_back({"return_signature", make("TupleType", "", std::move(signature_edges), name.location)});
         }
@@ -850,10 +854,28 @@ private:
         bool is_null = false;
     };
 
+    struct LogicExpression {
+        enum class Kind { Constant, Atom, And, Or, Not };
+
+        Kind kind = Kind::Constant;
+        bool constant = false;
+        std::string atom;
+        std::shared_ptr<const LogicExpression> lhs;
+        std::shared_ptr<const LogicExpression> rhs;
+    };
+
+    using Logic = std::shared_ptr<const LogicExpression>;
+
+    struct LogicConstraint {
+        Logic expression;
+        bool expected = true;
+    };
+
     enum class Signal { Normal, Break, Continue, Terminated, Bound, Error };
 
     struct ExecutionState {
         SymbolicPath path;
+        std::vector<LogicConstraint> logic_constraints;
         std::unordered_map<std::string, SymbolicValue> values;
         std::unordered_map<std::string, std::vector<SymbolicValue>> vectors;
         std::size_t steps = 0;
@@ -882,6 +904,312 @@ private:
         result.reserve(syntax(id).edges.size());
         for (const auto& edge : syntax(id).edges) result.push_back(edge.target);
         return result;
+    }
+
+    using NameSet = std::set<std::string>;
+
+    struct RelevanceResult {
+        NameSet live;
+        bool affects_path = false;
+    };
+
+    struct ControlRelevance {
+        // Whether taking the transfer skips path-relevant work before reaching
+        // the corresponding structured-control target.
+        bool break_skips_path = false;
+        bool continue_skips_path = false;
+    };
+
+    void collect_identifiers(NodeId id, NameSet& names) const {
+        const auto& node = syntax(id);
+        if (node.kind == "Identifier") names.insert(node.value);
+        for (const auto child : children(id)) collect_identifiers(child, names);
+    }
+
+    static void merge_names(NameSet& destination, const NameSet& source) {
+        destination.insert(source.begin(), source.end());
+    }
+
+    RelevanceResult analyze_relevance(NodeId id, NameSet live_after,
+                                      ControlRelevance control) {
+        const auto& node = syntax(id);
+        if (node.kind == "Block") {
+            bool affects_path = false;
+            bool suffix_affects_path = false;
+            auto statements = children(id);
+            for (auto statement = statements.rbegin(); statement != statements.rend();
+                 ++statement) {
+                ControlRelevance statement_control = control;
+                statement_control.break_skips_path =
+                    statement_control.break_skips_path || suffix_affects_path;
+                statement_control.continue_skips_path =
+                    statement_control.continue_skips_path || suffix_affects_path;
+                auto analyzed = analyze_relevance(*statement, std::move(live_after),
+                                                  statement_control);
+                affects_path = affects_path || analyzed.affects_path;
+                suffix_affects_path = suffix_affects_path || analyzed.affects_path;
+                live_after = std::move(analyzed.live);
+            }
+            return {std::move(live_after), affects_path};
+        }
+
+        const auto analyze_write = [&](const std::string& name,
+                                       std::optional<NodeId> dependency,
+                                       bool reads_old_value) {
+            RelevanceResult result{std::move(live_after), false};
+            if (!result.live.contains(name)) return result;
+            result.affects_path = true;
+            if (!reads_old_value) result.live.erase(name);
+            if (dependency) collect_identifiers(*dependency, result.live);
+            return result;
+        };
+
+        if (node.kind == "Declaration") {
+            return analyze_write(node.value, optional_edge(id, "initializer"), false);
+        }
+        if (node.kind == "Assign") {
+            return analyze_write(syntax(required_edge(id, "lhs")).value,
+                                 required_edge(id, "rhs"), false);
+        }
+        if (node.kind == "Increment") {
+            return analyze_write(syntax(required_edge(id, "target")).value,
+                                 std::nullopt, true);
+        }
+        if (node.kind == "AddAssign") {
+            return analyze_write(syntax(required_edge(id, "lhs")).value,
+                                 required_edge(id, "rhs"), true);
+        }
+        if (node.kind == "Push") {
+            return analyze_write(syntax(required_edge(id, "target")).value,
+                                 required_edge(id, "value"), true);
+        }
+        if (node.kind == "SETupleAssignment") {
+            for (const auto target : children(required_edge(id, "targets"))) {
+                live_after.erase(syntax(target).value);
+            }
+            return {std::move(live_after), true};
+        }
+        if (node.kind == "If") {
+            auto yes = analyze_relevance(required_edge(id, "then"), live_after, control);
+            RelevanceResult no{live_after, false};
+            if (const auto alternative = optional_edge(id, "else")) {
+                no = analyze_relevance(*alternative, live_after, control);
+            }
+            NameSet live = std::move(yes.live);
+            merge_names(live, no.live);
+            const bool relevant = yes.affects_path || no.affects_path;
+            if (relevant) {
+                collect_identifiers(required_edge(id, "condition"), live);
+                path_relevant_controls_.insert(id);
+            }
+            return {std::move(live), relevant};
+        }
+        if (node.kind == "While") {
+            NameSet loop_live = live_after;
+            bool relevant = false;
+            while (true) {
+                // A break changes the symbolic path when it suppresses a
+                // future iteration containing path-relevant work. Continue
+                // reaches the ordinary next-iteration target; only work later
+                // in the current body can make it relevant, which Block adds
+                // to this context while walking the body backwards.
+                const ControlRelevance loop_control{relevant, false};
+                auto body = analyze_relevance(required_edge(id, "body"), loop_live,
+                                              loop_control);
+                NameSet next = live_after;
+                merge_names(next, body.live);
+                const bool next_relevant = relevant || body.affects_path;
+                if (next == loop_live && next_relevant == relevant) break;
+                loop_live = std::move(next);
+                relevant = next_relevant;
+            }
+            if (relevant) {
+                collect_identifiers(required_edge(id, "condition"), loop_live);
+                path_relevant_controls_.insert(id);
+            }
+            return {std::move(loop_live), relevant};
+        }
+        if (node.kind == "Switch") {
+            NameSet live;
+            bool relevant = false;
+            for (const auto& edge : node.edges) {
+                if (edge.label == "selector") continue;
+                NodeId body = edge.target;
+                if (edge.label.starts_with("case")) body = required_edge(body, "body");
+                auto branch = analyze_relevance(body, live_after, control);
+                merge_names(live, branch.live);
+                relevant = relevant || branch.affects_path;
+            }
+            if (relevant) {
+                collect_identifiers(required_edge(id, "selector"), live);
+                path_relevant_controls_.insert(id);
+            }
+            return {std::move(live), relevant};
+        }
+        if (node.kind == "CheckTerminalConditions" || node.kind == "Decode" ||
+            node.kind == "End") {
+            return {std::move(live_after), true};
+        }
+        if (node.kind == "Break") {
+            return {std::move(live_after), control.break_skips_path};
+        }
+        if (node.kind == "Continue") {
+            return {std::move(live_after), control.continue_skips_path};
+        }
+        return {std::move(live_after), false};
+    }
+
+    void mark_all_policy_controls(NodeId id) {
+        const auto& node = syntax(id);
+        if (node.kind == "If" || node.kind == "While" || node.kind == "Switch") {
+            path_relevant_controls_.insert(id);
+        }
+        for (const auto child : children(id)) mark_all_policy_controls(child);
+    }
+
+    void prepare_path_relevance(NodeId af_body) {
+        NameSet live;
+        for (const auto terminal : terminal_conditions_) {
+            collect_identifiers(required_edge(terminal, "condition"), live);
+        }
+        while (true) {
+            // A top-level break escapes the adaptive flow and is therefore an
+            // observable error. A top-level continue is relevant only when it
+            // skips path-relevant statements later in the current AF round.
+            auto analyzed = analyze_relevance(af_body, live, {true, false});
+            NameSet next = live;
+            merge_names(next, analyzed.live);
+            if (next == live) break;
+            live = std::move(next);
+        }
+        for (const auto& [unused, policy] : policies_) {
+            (void)unused;
+            mark_all_policy_controls(policy);
+        }
+    }
+
+    static Logic logic_constant(bool value) {
+        auto expression = std::make_shared<LogicExpression>();
+        expression->kind = LogicExpression::Kind::Constant;
+        expression->constant = value;
+        return expression;
+    }
+
+    static Logic logic_atom(std::string value) {
+        auto expression = std::make_shared<LogicExpression>();
+        expression->kind = LogicExpression::Kind::Atom;
+        expression->atom = std::move(value);
+        return expression;
+    }
+
+    static Logic logic_binary(LogicExpression::Kind kind, Logic lhs, Logic rhs) {
+        auto expression = std::make_shared<LogicExpression>();
+        expression->kind = kind;
+        expression->lhs = std::move(lhs);
+        expression->rhs = std::move(rhs);
+        return expression;
+    }
+
+    static Logic logic_not(Logic operand) {
+        auto expression = std::make_shared<LogicExpression>();
+        expression->kind = LogicExpression::Kind::Not;
+        expression->lhs = std::move(operand);
+        return expression;
+    }
+
+    enum class PartialTruth { False, True, Unknown };
+
+    static PartialTruth evaluate_logic(
+        const Logic& expression,
+        const std::unordered_map<std::string, bool>& assignment) {
+        switch (expression->kind) {
+        case LogicExpression::Kind::Constant:
+            return expression->constant ? PartialTruth::True : PartialTruth::False;
+        case LogicExpression::Kind::Atom:
+            if (const auto found = assignment.find(expression->atom);
+                found != assignment.end()) {
+                return found->second ? PartialTruth::True : PartialTruth::False;
+            }
+            return PartialTruth::Unknown;
+        case LogicExpression::Kind::Not: {
+            const auto value = evaluate_logic(expression->lhs, assignment);
+            if (value == PartialTruth::True) return PartialTruth::False;
+            if (value == PartialTruth::False) return PartialTruth::True;
+            return PartialTruth::Unknown;
+        }
+        case LogicExpression::Kind::And: {
+            const auto lhs = evaluate_logic(expression->lhs, assignment);
+            const auto rhs = evaluate_logic(expression->rhs, assignment);
+            if (lhs == PartialTruth::False || rhs == PartialTruth::False) {
+                return PartialTruth::False;
+            }
+            if (lhs == PartialTruth::True && rhs == PartialTruth::True) {
+                return PartialTruth::True;
+            }
+            return PartialTruth::Unknown;
+        }
+        case LogicExpression::Kind::Or: {
+            const auto lhs = evaluate_logic(expression->lhs, assignment);
+            const auto rhs = evaluate_logic(expression->rhs, assignment);
+            if (lhs == PartialTruth::True || rhs == PartialTruth::True) {
+                return PartialTruth::True;
+            }
+            if (lhs == PartialTruth::False && rhs == PartialTruth::False) {
+                return PartialTruth::False;
+            }
+            return PartialTruth::Unknown;
+        }
+        }
+        throw std::logic_error("unknown logic-expression kind");
+    }
+
+    static std::optional<std::string> first_unassigned_atom(
+        const Logic& expression,
+        const std::unordered_map<std::string, bool>& assignment) {
+        if (expression->kind == LogicExpression::Kind::Atom) {
+            if (!assignment.contains(expression->atom)) return expression->atom;
+            return std::nullopt;
+        }
+        if (expression->lhs) {
+            if (auto atom = first_unassigned_atom(expression->lhs, assignment)) return atom;
+        }
+        if (expression->rhs) {
+            if (auto atom = first_unassigned_atom(expression->rhs, assignment)) return atom;
+        }
+        return std::nullopt;
+    }
+
+    static bool logic_satisfiable(
+        const std::vector<LogicConstraint>& constraints,
+        std::unordered_map<std::string, bool>& assignment) {
+        const Logic* unresolved = nullptr;
+        for (const auto& constraint : constraints) {
+            const auto value = evaluate_logic(constraint.expression, assignment);
+            if (value != PartialTruth::Unknown) {
+                const bool actual = value == PartialTruth::True;
+                if (actual != constraint.expected) return false;
+            } else if (unresolved == nullptr) {
+                unresolved = &constraint.expression;
+            }
+        }
+        if (unresolved == nullptr) return true;
+        const auto atom = first_unassigned_atom(*unresolved, assignment);
+        if (!atom) throw std::logic_error("unresolved formula has no atom");
+
+        assignment[*atom] = false;
+        if (logic_satisfiable(constraints, assignment)) {
+            assignment.erase(*atom);
+            return true;
+        }
+        assignment[*atom] = true;
+        const bool satisfiable = logic_satisfiable(constraints, assignment);
+        assignment.erase(*atom);
+        return satisfiable;
+    }
+
+    static bool logic_satisfiable(const std::vector<LogicConstraint>& constraints) {
+        std::unordered_map<std::string, bool> assignment;
+        return logic_satisfiable(constraints, assignment);
     }
 
     bool consume(ExecutionState& state) const {
@@ -1015,15 +1343,44 @@ private:
         return {node.kind + "(" + node.value + ")", {}, {}, false};
     }
 
+    Logic make_logic(NodeId id, const ExecutionState& state) const {
+        const auto& node = syntax(id);
+        if (node.kind == "Binary" && (node.value == "and" || node.value == "or")) {
+            return logic_binary(node.value == "and" ? LogicExpression::Kind::And
+                                                     : LogicExpression::Kind::Or,
+                                make_logic(required_edge(id, "lhs"), state),
+                                make_logic(required_edge(id, "rhs"), state));
+        }
+
+        const auto evaluated = evaluate(id, state);
+        if (evaluated.boolean) return logic_constant(*evaluated.boolean);
+        if (node.kind == "Binary" && (node.value == "==" || node.value == "!=")) {
+            const auto lhs = evaluate(required_edge(id, "lhs"), state);
+            const auto rhs = evaluate(required_edge(id, "rhs"), state);
+            Logic equality = logic_atom("(" + lhs.text + ") == (" + rhs.text + ")");
+            return node.value == "!=" ? logic_not(std::move(equality)) : equality;
+        }
+        return logic_atom(evaluated.text);
+    }
+
     bool constrain(ExecutionState& state, const SymbolicValue& condition,
-                   bool expected) const {
+                   bool expected, Logic logic = {}) const {
         if (condition.boolean) return *condition.boolean == expected;
         for (const auto& existing : state.path.constraints) {
             if (existing.expression == condition.text) {
                 return existing.expected == expected;
             }
         }
-        state.path.constraints.push_back({condition.text, expected});
+
+        if (!logic) logic = logic_atom(condition.text);
+        auto candidate_constraints = state.logic_constraints;
+        candidate_constraints.push_back({logic, expected});
+        if (!logic_satisfiable(candidate_constraints)) return false;
+
+        state.path.constraints.push_back({condition.text, expected,
+                                          state.path.events.size(),
+                                          state.round, state.phase});
+        state.logic_constraints.push_back({std::move(logic), expected});
         return true;
     }
 
@@ -1043,36 +1400,15 @@ private:
                                   std::make_move_iterator(second.end()));
                 }
             } else {
-                // `A and B == false` and `A or B == true` each describe one
-                // control-flow choice but multiple concrete witnesses. Keep
-                // them as a single symbolic constraint instead of duplicating
-                // identical control paths for every witness.
-                const auto lhs_value = evaluate(lhs, state);
-                const auto rhs_value = evaluate(rhs, state);
-                if (node.value == "and") {
-                    if (lhs_value.boolean && !*lhs_value.boolean) {
-                        result.push_back(std::move(state));
-                    } else if (lhs_value.boolean && *lhs_value.boolean) {
-                        result = fork_condition(std::move(state), rhs, false);
-                    } else if (rhs_value.boolean && *rhs_value.boolean) {
-                        result = fork_condition(std::move(state), lhs, false);
-                    } else if (rhs_value.boolean && !*rhs_value.boolean) {
-                        result.push_back(std::move(state));
-                    }
-                } else {
-                    if (lhs_value.boolean && *lhs_value.boolean) {
-                        result.push_back(std::move(state));
-                    } else if (lhs_value.boolean && !*lhs_value.boolean) {
-                        result = fork_condition(std::move(state), rhs, true);
-                    } else if (rhs_value.boolean && !*rhs_value.boolean) {
-                        result = fork_condition(std::move(state), lhs, true);
-                    } else if (rhs_value.boolean && *rhs_value.boolean) {
-                        result.push_back(std::move(state));
-                    }
-                }
-                if (result.empty() && !lhs_value.boolean && !rhs_value.boolean) {
-                    const auto compound = evaluate(condition_id, state);
-                    if (constrain(state, compound, expected)) result.push_back(std::move(state));
+                // `!(A and B)` and `A or B` each represent one control-flow
+                // outcome even though they have multiple concrete witnesses.
+                // Keep the outcome as one path.  The internal propositional
+                // satisfiability check still rejects a later contradictory
+                // constraint such as A and B.
+                const auto compound = evaluate(condition_id, state);
+                if (constrain(state, compound, expected,
+                              make_logic(condition_id, state))) {
+                    result.push_back(std::move(state));
                 }
             }
             cap(result);
@@ -1135,6 +1471,157 @@ private:
         }
     }
 
+    void collect_written_variables(NodeId id, NameSet& names) const {
+        const auto& node = syntax(id);
+        if (node.kind == "Declaration") names.insert(node.value);
+        else if (node.kind == "Assign" || node.kind == "AddAssign") {
+            names.insert(syntax(required_edge(id, "lhs")).value);
+        } else if (node.kind == "Increment" || node.kind == "Push") {
+            names.insert(syntax(required_edge(id, "target")).value);
+        } else if (node.kind == "SETupleAssignment") {
+            for (const auto target : children(required_edge(id, "targets"))) {
+                names.insert(syntax(target).value);
+            }
+        }
+        for (const auto child : children(id)) collect_written_variables(child, names);
+    }
+
+    static SymbolicValue merged_value(const std::string& condition,
+                                      const SymbolicValue& yes,
+                                      const SymbolicValue& no) {
+        if (yes.text == no.text && yes.integer == no.integer &&
+            yes.boolean == no.boolean && yes.is_null == no.is_null) {
+            return yes;
+        }
+        return {"ite(" + condition + ", " + yes.text + ", " + no.text + ")",
+                {}, {}, false};
+    }
+
+    ExecutionState merge_abstract_states(ExecutionState base,
+                                         const ExecutionState& yes,
+                                         const ExecutionState& no,
+                                         const std::string& condition) const {
+        NameSet names;
+        for (const auto& [name, unused] : base.values) {
+            (void)unused;
+            names.insert(name);
+        }
+        for (const auto& [name, unused] : yes.values) {
+            (void)unused;
+            names.insert(name);
+        }
+        for (const auto& [name, unused] : no.values) {
+            (void)unused;
+            names.insert(name);
+        }
+        for (const auto& name : names) {
+            const SymbolicValue fallback = base.values.contains(name)
+                ? base.values.at(name) : SymbolicValue{name, {}, {}, false};
+            const auto& yes_value = yes.values.contains(name) ? yes.values.at(name) : fallback;
+            const auto& no_value = no.values.contains(name) ? no.values.at(name) : fallback;
+            base.values[name] = merged_value(condition, yes_value, no_value);
+        }
+        return base;
+    }
+
+    ExecutionState abstract_execute_statement(NodeId id, ExecutionState state) {
+        const auto& node = syntax(id);
+        if (node.kind == "Declaration") {
+            execute_declaration(id, state);
+            return state;
+        }
+        if (node.kind == "Assign") {
+            const auto lhs = required_edge(id, "lhs");
+            state.values[syntax(lhs).value] = evaluate(required_edge(id, "rhs"), state);
+            return state;
+        }
+        if (node.kind == "Increment" || node.kind == "AddAssign") {
+            const auto target = required_edge(id, node.kind == "Increment" ? "target" : "lhs");
+            const std::string name = syntax(target).value;
+            const auto current = state.values.contains(name)
+                ? state.values.at(name) : SymbolicValue{name, {}, {}, false};
+            const auto amount = node.kind == "Increment"
+                ? SymbolicValue{"1", 1, {}, false}
+                : evaluate(required_edge(id, "rhs"), state);
+            if (current.integer && amount.integer) {
+                const auto value = *current.integer + *amount.integer;
+                state.values[name] = {std::to_string(value), value, {}, false};
+            } else {
+                state.values[name] = {parenthesize(current) + " + " + parenthesize(amount),
+                                      {}, {}, false};
+            }
+            return state;
+        }
+        if (node.kind == "Push") {
+            const std::string name = syntax(required_edge(id, "target")).value;
+            const auto value = evaluate(required_edge(id, "value"), state);
+            const auto current = state.values.contains(name)
+                ? state.values.at(name) : SymbolicValue{name, {}, {}, false};
+            state.values[name] = {"push(" + current.text + ", " + value.text + ")",
+                                  {}, {}, false};
+            return state;
+        }
+        if (node.kind == "If") {
+            const auto condition = evaluate(required_edge(id, "condition"), state);
+            if (condition.boolean) {
+                if (*condition.boolean) {
+                    return abstract_execute_block(required_edge(id, "then"), std::move(state));
+                }
+                if (const auto alternative = optional_edge(id, "else")) {
+                    return syntax(*alternative).kind == "If"
+                        ? abstract_execute_statement(*alternative, std::move(state))
+                        : abstract_execute_block(*alternative, std::move(state));
+                }
+                return state;
+            }
+            ExecutionState yes = abstract_execute_block(required_edge(id, "then"), state);
+            ExecutionState no = state;
+            if (const auto alternative = optional_edge(id, "else")) {
+                no = syntax(*alternative).kind == "If"
+                    ? abstract_execute_statement(*alternative, std::move(no))
+                    : abstract_execute_block(*alternative, std::move(no));
+            }
+            return merge_abstract_states(std::move(state), yes, no, condition.text);
+        }
+        if (node.kind == "While") {
+            NameSet written;
+            collect_written_variables(required_edge(id, "body"), written);
+            const std::string location = "r" + std::to_string(state.round) + "e" +
+                                         std::to_string(state.path.events.size()) + "_L" +
+                                         std::to_string(node.location.line) + "C" +
+                                         std::to_string(node.location.column);
+            for (const auto& name : written) {
+                const auto current = state.values.contains(name)
+                    ? state.values.at(name) : SymbolicValue{name, {}, {}, false};
+                state.values[name] = {"loop_result(" + location + ", " + name + ", " +
+                                      current.text + ")", {}, {}, false};
+            }
+            return state;
+        }
+        if (node.kind == "Switch") {
+            NameSet written;
+            collect_written_variables(id, written);
+            const std::string location = "L" + std::to_string(node.location.line) +
+                                         "C" + std::to_string(node.location.column);
+            for (const auto& name : written) {
+                const auto current = state.values.contains(name)
+                    ? state.values.at(name) : SymbolicValue{name, {}, {}, false};
+                state.values[name] = {"switch_result(" + location + ", " + name + ", " +
+                                      current.text + ")", {}, {}, false};
+            }
+            return state;
+        }
+        if (node.kind == "Break" || node.kind == "Continue") return state;
+        throw std::logic_error("path-irrelevant region contains " + node.kind);
+    }
+
+    ExecutionState abstract_execute_block(NodeId block, ExecutionState state) {
+        for (const auto statement : children(block)) {
+            state = abstract_execute_statement(statement, std::move(state));
+        }
+        return state;
+    }
+
     std::string resolve_callee(NodeId call, const ExecutionState& state) const {
         const auto callee = required_edge(call, "callee");
         return evaluate(callee, state).text;
@@ -1144,20 +1631,35 @@ private:
         const auto targets = children(required_edge(id, "targets"));
         const auto call = required_edge(id, "call");
         const std::string se_name = resolve_callee(call, state);
+        const auto qasm = se_files_.find(se_name);
+        const auto data_register = se_data_registers_.find(se_name);
+        if (qasm == se_files_.end() || data_register == se_data_registers_.end()) {
+            set_error(state, "cannot resolve QASM metadata for SE '" + se_name + "'");
+            return {std::move(state)};
+        }
+        std::optional<std::string> flag_register;
+        if (const auto found = se_flag_registers_.find(se_name);
+            found != se_flag_registers_.end()) {
+            flag_register = found->second;
+        }
         ++state.invocation;
-        const std::string stem = "$r" + std::to_string(state.round) + "_" +
-                                 state.phase + "_e" + std::to_string(state.invocation);
+        const std::string stem =
+            "id_" + std::to_string(state.path.events.size() + 1);
         const std::string syndrome = stem + ".s";
         std::optional<std::string> flag;
         if (targets.size() == 2) flag = stem + ".f";
         state.path.events.push_back({state.round, state.invocation, state.phase,
-                                     se_name, syndrome, flag});
+                                     se_name, qasm->second, data_register->second,
+                                     flag_register, syndrome, flag});
         if (!targets.empty()) state.values[syntax(targets[0]).value] = {syndrome, {}, {}, false};
         if (targets.size() == 2) state.values[syntax(targets[1]).value] = {*flag, {}, {}, false};
         return {std::move(state)};
     }
 
     std::vector<ExecutionState> execute_if(NodeId id, ExecutionState state) {
+        if (!path_relevant_controls_.contains(id)) {
+            return {abstract_execute_statement(id, std::move(state))};
+        }
         const auto condition = required_edge(id, "condition");
         std::vector<ExecutionState> result;
         auto yes_states = fork_condition(state, condition, true);
@@ -1187,6 +1689,9 @@ private:
     }
 
     std::vector<ExecutionState> execute_switch(NodeId id, ExecutionState state) {
+        if (!path_relevant_controls_.contains(id)) {
+            return {abstract_execute_statement(id, std::move(state))};
+        }
         const auto selector = evaluate(required_edge(id, "selector"), state);
         std::vector<std::pair<NodeId, NodeId>> cases;
         std::optional<NodeId> default_block;
@@ -1244,6 +1749,9 @@ private:
     }
 
     std::vector<ExecutionState> execute_while(NodeId id, ExecutionState state) {
+        if (!path_relevant_controls_.contains(id)) {
+            return {abstract_execute_statement(id, std::move(state))};
+        }
         const auto condition = required_edge(id, "condition");
         std::vector<ExecutionState> result;
         std::vector<ExecutionState> pending{std::move(state)};
@@ -1426,6 +1934,7 @@ private:
         std::vector<ExecutionState> frontier{std::move(initial)};
         std::vector<ExecutionState> completed;
         const auto af_body = required_edge(af, "body");
+        prepare_path_relevance(af_body);
         while (!frontier.empty()) {
             std::vector<ExecutionState> next_round;
             for (auto& state : frontier) {
@@ -1483,6 +1992,9 @@ private:
     std::vector<Diagnostic> diagnostics_;
     std::set<std::string> se_names_;
     std::unordered_map<std::string, std::size_t> se_arity_;
+    std::unordered_map<std::string, std::string> se_files_;
+    std::unordered_map<std::string, std::string> se_data_registers_;
+    std::unordered_map<std::string, std::string> se_flag_registers_;
     std::set<std::string> global_names_;
     std::set<std::string> tc_ids_;
     std::set<std::string> tp_ids_;
@@ -1492,6 +2004,7 @@ private:
     std::size_t loop_depth_ = 0;
     std::size_t switch_depth_ = 0;
     bool truncated_ = false;
+    std::set<NodeId> path_relevant_controls_;
     std::vector<NodeId> terminal_conditions_;
     std::unordered_map<int, NodeId> policies_;
 };
@@ -1519,6 +2032,12 @@ std::string ParseResult::to_json() const {
         if (path.decode_record) out << '"' << json_escape(*path.decode_record) << '"'; else out << "null";
         out << ", \"assertion_error\": ";
         if (path.assertion_error) out << '"' << json_escape(*path.assertion_error) << '"'; else out << "null";
+        out << ", \"qasm_sequence\": [";
+        for (std::size_t j = 0; j < path.events.size(); ++j) {
+            if (j) out << ", ";
+            out << '"' << json_escape(path.events[j].qasm_file) << '"';
+        }
+        out << ']';
         out << ", \"events\": [";
         for (std::size_t j = 0; j < path.events.size(); ++j) {
             const auto& event = path.events[j];
@@ -1527,7 +2046,15 @@ std::string ParseResult::to_json() const {
                 << ", \"invocation\": " << event.invocation
                 << ", \"phase\": \"" << json_escape(event.phase)
                 << "\", \"se\": \"" << json_escape(event.se_name)
-                << "\", \"s\": \"" << json_escape(event.syndrome)
+                << "\", \"qasm_file\": \"" << json_escape(event.qasm_file)
+                << "\", \"data_register\": \"" << json_escape(event.data_register)
+                << "\", \"flag_register\": ";
+            if (event.flag_register) {
+                out << '"' << json_escape(*event.flag_register) << '"';
+            } else {
+                out << "null";
+            }
+            out << ", \"s\": \"" << json_escape(event.syndrome)
                 << "\", \"f\": ";
             if (event.flag) out << '"' << json_escape(*event.flag) << '"'; else out << "null";
             out << '}';
@@ -1536,7 +2063,10 @@ std::string ParseResult::to_json() const {
         for (std::size_t j = 0; j < path.constraints.size(); ++j) {
             if (j) out << ", ";
             out << "{\"expression\": \"" << json_escape(path.constraints[j].expression)
-                << "\", \"expected\": " << (path.constraints[j].expected ? "true" : "false") << '}';
+                << "\", \"expected\": " << (path.constraints[j].expected ? "true" : "false")
+                << ", \"after_event\": " << path.constraints[j].after_event
+                << ", \"round\": " << path.constraints[j].round
+                << ", \"phase\": \"" << json_escape(path.constraints[j].phase) << "\"}";
         }
         out << "]}";
         if (i + 1 != paths.size()) out << ',';

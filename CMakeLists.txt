@@ -14,12 +14,31 @@ target_compile_options(fpdl_parser PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(fpdlc src/main.cpp)
 target_link_libraries(fpdlc PRIVATE fpdl_parser)
 
+add_library(fpdl_path_graph
+    src/path_graph.cpp
+)
+target_include_directories(fpdl_path_graph PUBLIC include)
+target_compile_options(fpdl_path_graph PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(fpdl-path-graph src/graph_main.cpp)
+target_link_libraries(fpdl-path-graph PRIVATE fpdl_path_graph)
+
+add_executable(fpdl-path-dag src/dag_main.cpp)
+target_link_libraries(fpdl-path-dag PRIVATE fpdl_path_graph)
+
+add_executable(fpdl-dag-graph src/dag_graph_main.cpp)
+target_link_libraries(fpdl-dag-graph PRIVATE fpdl_path_graph)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(fpdl_parser_tests tests/parser_tests.cpp)
     target_link_libraries(fpdl_parser_tests PRIVATE fpdl_parser)
 
+    add_executable(fpdl_path_graph_tests tests/path_graph_tests.cpp)
+    target_link_libraries(fpdl_path_graph_tests PRIVATE fpdl_path_graph)
+
     file(GLOB FPDL_EXAMPLES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/*/*.fpdl")
     add_test(NAME parser_examples
              COMMAND fpdl_parser_tests ${FPDL_EXAMPLES})
+    add_test(NAME path_graph COMMAND fpdl_path_graph_tests)
 endif()

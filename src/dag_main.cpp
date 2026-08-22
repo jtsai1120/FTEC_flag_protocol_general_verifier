@@ -1,4 +1,4 @@
-#include "fpdl/parser.hpp"
+#include "fpdl/path_graph.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -10,7 +10,7 @@ namespace {
 
 void usage(const char* argv0) {
     std::cerr << "usage: " << argv0
-              << " <input.fpdl> [-o paths.json] --bmc-bound N [--max-paths N]\n";
+              << " <paths.json> [-o dag.json] [--max-paths N]\n";
 }
 
 } // namespace
@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
 
     std::filesystem::path input;
     std::optional<std::filesystem::path> output;
-    fpdl::ParseOptions options;
+    fpdl::GraphOptions options;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -33,19 +33,6 @@ int main(int argc, char** argv) {
                 return 2;
             }
             output = argv[i];
-        } else if (arg == "--bmc-bound") {
-            if (++i >= argc) {
-                usage(argv[0]);
-                return 2;
-            }
-            try {
-                const auto parsed = std::stoull(argv[i]);
-                if (parsed == 0) throw std::invalid_argument("zero");
-                options.bmc_bound = parsed;
-            } catch (const std::exception&) {
-                std::cerr << "error: --bmc-bound must be a positive integer\n";
-                return 2;
-            }
         } else if (arg == "--max-paths") {
             if (++i >= argc) {
                 usage(argv[0]);
@@ -74,37 +61,35 @@ int main(int argc, char** argv) {
         usage(argv[0]);
         return 2;
     }
-    if (!options.bmc_bound) {
-        std::cerr << "error: --bmc-bound is required\n";
-        return 2;
-    }
 
     try {
-        auto result = fpdl::Parser::parse_file(input, options);
-        const std::string json = result.to_json();
-
+        const auto result = fpdl::render_path_graph_file(
+            input, fpdl::GraphFormat::DagJson, options);
         if (output) {
-            std::ofstream stream(*output);
+            std::ofstream stream(*output, std::ios::binary);
             if (!stream) {
                 std::cerr << "error: cannot open output file " << *output << '\n';
                 return 1;
             }
-            stream << json << '\n';
+            stream << result.content;
+            if (!stream) {
+                std::cerr << "error: failed while writing output file " << *output << '\n';
+                return 1;
+            }
         } else {
-            std::cout << json << '\n';
+            std::cout << result.content;
         }
-
-        for (const auto& diagnostic : result.diagnostics) {
-            std::cerr << input.string() << ':' << diagnostic.location.line << ':'
-                      << diagnostic.location.column << ": warning: "
-                      << diagnostic.message << '\n';
+        if (result.render_truncated) {
+            std::cerr << "warning: included " << result.rendered_path_count << " of "
+                      << result.input_path_count
+                      << " paths; raise --max-paths to include more\n";
+        }
+        if (result.input_truncated) {
+            std::cerr << "warning: input JSON was already truncated by the parser\n";
         }
         return 0;
-    } catch (const fpdl::ParseError& error) {
-        std::cerr << input.string() << ':' << error.location().line << ':'
-                  << error.location().column << ": error: " << error.what() << '\n';
     } catch (const std::exception& error) {
         std::cerr << "error: " << error.what() << '\n';
+        return 1;
     }
-    return 1;
 }

@@ -35,6 +35,10 @@ private:
 struct SymbolicConstraint {
     std::string expression;
     bool expected = true;
+    // Exact execution checkpoint at which this constraint was introduced.
+    std::size_t after_event = 0;
+    std::size_t round = 0;
+    std::string phase;
 };
 
 struct SEEvent {
@@ -42,6 +46,11 @@ struct SEEvent {
     std::size_t invocation = 0;
     std::string phase;
     std::string se_name;
+    // Exact file value from the invoked SE's `file:` declaration.
+    std::string qasm_file;
+    // QASM classical output registers declared by `cm:` and optional `cf:`.
+    std::string data_register;
+    std::optional<std::string> flag_register;
     std::string syndrome;
     std::optional<std::string> flag;
 };

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400.0" height="1515.0" viewBox="0 0 1400.0 1515.0" role="img" aria-labelledby="dag-title dag-desc">
+<title id="dag-title">Control-flow DAG for LL25_[[19,1,5]]</title>
+<desc id="dag-desc">SE states connected by control-flow conditions.</desc>
+<defs><marker id="dag-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#7b879b"/></marker><filter id="dag-shadow" x="-15%" y="-15%" width="130%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-opacity="0.12"/></filter></defs>
+<rect width="100%" height="100%" fill="#f6f8fc"/>
+<text x="36" y="38" font-family="ui-sans-serif, system-ui" font-size="23" font-weight="700" fill="#172033">LL25_[[19,1,5]] · control-flow DAG</text>
+<text x="36" y="64" font-family="ui-sans-serif, system-ui" font-size="13" fill="#667085">10 states · 9 edges · 4 paths</text>
+<path d="M 700.0 194.0 C 700.0 260.5, 700.0 260.5, 700.0 327.0" fill="none" stroke="#7b879b" stroke-width="2" marker-end="url(#dag-arrow)"/>
+<g><title>true</title><rect x="676.6" y="246.5" width="46.8" height="28.0" rx="7" fill="#fff8e6" stroke="#d6a145"/>
+<text x="700.0" y="264.5" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#66460e"><tspan x="700.0" dy="0">true</tspan></text></g>
+<path d="M 700.0 466.0 C 700.0 521.5, 465.0 521.5, 465.0 577.0" fill="none" stroke="#7b879b" stroke-width="2" marker-end="url(#dag-arrow)"/>
+<g><title>(id_1.s) == (0)
+AND (id_1.f) == (0)</title><rect x="505.1" y="499.5" width="154.8" height="44.0" rx="7" fill="#fff8e6" stroke="#d6a145"/>
+<text x="582.5" y="517.5" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#66460e"><tspan x="582.5" dy="0">(id_1.s) == (0)</tspan><tspan x="582.5" dy="16">AND (id_1.f) == (0)</tspan></text></g>
+<path d="M 700.0 466.0 C 700.0 519.0, 935.0 519.0, 935.0 572.0" fill="none" stroke="#7b879b" stroke-width="2" marker-end="url(#dag-arrow)"/>
+<g><title>NOT (((id_1.s) == (0)) and ((id_1.f) == (0)))</title><rect x="668.1" y="497.0" width="298.8" height="44.0" rx="7" fill="#fff8e6" stroke="#d6a145"/>
+<text x="817.5" y="515.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#66460e"><tspan x="817.5" dy="0">NOT (((id_1.s) == (0)) and ((id_1.f) ==</tspan><tspan x="817.5" dy="16">(0)))</tspan></text></g>
+<path d="M 935.0 711.0 C 935.0 764.0, 465.0 764.0, 465.0 817.0" fill="none" stroke="#7b879b" stroke-width="2" marker-end="url(#dag-arrow)"/>
+<g><title>NOT ((id_2.f) == (0))</title><rect x="615.4" y="750.0" width="169.2" height="28.0" rx="7" fill="#fff8e6" stroke="#d6a145"/>
+<text x="700.0" y="768.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#66460e"><tspan x="700.0" dy="0">NOT ((id_2.f) == (0))</tspan></text></g>
+<path d="M 935.0 711.0 C 935.0 764.0, 935.0 764.0, 935.0 817.0" fill="none" stroke="#7b879b" stroke-width="2" marker-end="url(#dag-arrow)"/>
+<g><title>NOT ((true) and ((id_2.f) != (0)))</title><rect x="803.6" y="750.0" width="262.8" height="28.0" rx="7" fill="#fff8e6" stroke="#d6a145"/>
+<text x="935.0" y="768.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#66460e"><tspan x="935.0" dy="0">NOT ((true) and ((id_2.f) != (0)))</tspan></text></g>
+<path d="M 465.0 956.0 C 465.0 1011.5, 230.0 1011.5, 230.0 1067.0" fill="none" stroke="#7b879b" stroke-width="2" marker-end="url(#dag-arrow)"/>
+<g><title>true</title><rect x="324.1" y="997.5" width="46.8" height="28.0" rx="7" fill="#fff8e6" stroke="#d6a145"/>
+<text x="347.5" y="1015.5" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#66460e"><tspan x="347.5" dy="0">true</tspan></text></g>
+<path d="M 935.0 956.0 C 935.0 1011.5, 700.0 1011.5, 700.0 1067.0" fill="none" stroke="#7b879b" stroke-width="2" marker-end="url(#dag-arrow)"/>
+<g><title>(id_2.s) == (0)
+AND (id_3.s) == (0)
+AND (id_3.f) == (0)</title><rect x="740.1" y="981.5" width="154.8" height="60.0" rx="7" fill="#fff8e6" stroke="#d6a145"/>
+<text x="817.5" y="999.5" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#66460e"><tspan x="817.5" dy="0">(id_2.s) == (0)</tspan><tspan x="817.5" dy="16">AND (id_3.s) == (0)</tspan><tspan x="817.5" dy="16">AND (id_3.f) == (0)</tspan></text></g>
+<path d="M 935.0 956.0 C 935.0 1009.0, 1170.0 1009.0, 1170.0 1062.0" fill="none" stroke="#7b879b" stroke-width="2" marker-end="url(#dag-arrow)"/>
+<g><title>NOT ((((id_2.s) == (0)) and ((id_3.s) == (0))) and ((id_3.f) == (0)))</title><rect x="899.5" y="987.0" width="306.0" height="44.0" rx="7" fill="#fff8e6" stroke="#d6a145"/>
+<text x="1052.5" y="1005.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#66460e"><tspan x="1052.5" dy="0">NOT ((((id_2.s) == (0)) and ((id_3.s) ==</tspan><tspan x="1052.5" dy="16">(0))) and ((id_3.f) == (0)))</tspan></text></g>
+<path d="M 1170.0 1201.0 C 1170.0 1256.5, 700.0 1256.5, 700.0 1312.0" fill="none" stroke="#7b879b" stroke-width="2" marker-end="url(#dag-arrow)"/>
+<g><title>true</title><rect x="911.6" y="1242.5" width="46.8" height="28.0" rx="7" fill="#fff8e6" stroke="#d6a145"/>
+<text x="935.0" y="1260.5" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#66460e"><tspan x="935.0" dy="0">true</tspan></text></g>
+<g id="state-0" data-kind="start"><title>Protocol LL25_[[19,1,5]]</title><rect x="550.0" y="116.0" width="300.0" height="78.0" rx="12" fill="#172033" stroke="#172033" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="700.0" y="151.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#ffffff"><tspan x="700.0" dy="0" font-weight="700">START</tspan><tspan x="700.0" dy="18">LL25_[[19,1,5]]</tspan></text></g>
+<g id="state-1" data-kind="se"><title>State 1 · FSE_f
+QASM: ./FSE_f.qasm
+data: m · flag: f
+Round 1 · af #1</title><rect x="520.0" y="334.0" width="360.0" height="132.0" rx="12" fill="#e7f0ff" stroke="#3973cf" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="700.0" y="378.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#172033"><tspan x="700.0" dy="0" font-weight="700">State 1 · FSE_f</tspan><tspan x="700.0" dy="18">QASM: ./FSE_f.qasm</tspan><tspan x="700.0" dy="18">data: m · flag: f</tspan><tspan x="700.0" dy="18">Round 1 · af #1</tspan></text></g>
+<g id="state-2" data-kind="terminal"><title>Path #0
+end · tc 1 / tp 1
+1 rounds · 5 transitions</title><rect x="285.0" y="584.0" width="360.0" height="122.0" rx="12" fill="#e5f7ed" stroke="#258a55" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="465.0" y="632.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#172033"><tspan x="465.0" dy="0" font-weight="700">Path #0</tspan><tspan x="465.0" dy="18">end · tc 1 / tp 1</tspan><tspan x="465.0" dy="18">1 rounds · 5 transitions</tspan></text></g>
+<g id="state-3" data-kind="se"><title>State 3 · FSE_f
+QASM: ./FSE_f.qasm
+data: m · flag: f
+Round 2 · af #1</title><rect x="755.0" y="579.0" width="360.0" height="132.0" rx="12" fill="#e7f0ff" stroke="#3973cf" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="935.0" y="623.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#172033"><tspan x="935.0" dy="0" font-weight="700">State 3 · FSE_f</tspan><tspan x="935.0" dy="18">QASM: ./FSE_f.qasm</tspan><tspan x="935.0" dy="18">data: m · flag: f</tspan><tspan x="935.0" dy="18">Round 2 · af #1</tspan></text></g>
+<g id="state-4" data-kind="se"><title>State 4 · FSE_b
+QASM: ./FSE_b.qasm
+data: m · flag: none
+Round 2 · tp #1</title><rect x="285.0" y="824.0" width="360.0" height="132.0" rx="12" fill="#e7f0ff" stroke="#3973cf" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="465.0" y="868.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#172033"><tspan x="465.0" dy="0" font-weight="700">State 4 · FSE_b</tspan><tspan x="465.0" dy="18">QASM: ./FSE_b.qasm</tspan><tspan x="465.0" dy="18">data: m · flag: none</tspan><tspan x="465.0" dy="18">Round 2 · tp #1</tspan></text></g>
+<g id="state-5" data-kind="terminal"><title>Path #1
+decode · tc 2 / tp 2
+2 rounds · 9 transitions
+decode record: mr[id_1.s, id_1.f, id_2.s, id_2.f, id_3.s]</title><rect x="50.0" y="1074.0" width="360.0" height="122.0" rx="12" fill="#e5f7ed" stroke="#258a55" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="230.0" y="1113.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#172033"><tspan x="230.0" dy="0" font-weight="700">Path #1</tspan><tspan x="230.0" dy="18">decode · tc 2 / tp 2</tspan><tspan x="230.0" dy="18">2 rounds · 9 transitions</tspan><tspan x="230.0" dy="18">decode record: mr[id_1.s, id_1.f, id_2.s,</tspan></text></g>
+<g id="state-6" data-kind="se"><title>State 6 · FSE_f
+QASM: ./FSE_f.qasm
+data: m · flag: f
+Round 3 · af #1</title><rect x="755.0" y="824.0" width="360.0" height="132.0" rx="12" fill="#e7f0ff" stroke="#3973cf" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="935.0" y="868.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#172033"><tspan x="935.0" dy="0" font-weight="700">State 6 · FSE_f</tspan><tspan x="935.0" dy="18">QASM: ./FSE_f.qasm</tspan><tspan x="935.0" dy="18">data: m · flag: f</tspan><tspan x="935.0" dy="18">Round 3 · af #1</tspan></text></g>
+<g id="state-7" data-kind="terminal"><title>Path #2
+decode · tc 3 / tp 3
+3 rounds · 12 transitions
+decode record: mr[id_1.s, id_1.f, 0, id_2.f, 0, 0]</title><rect x="520.0" y="1074.0" width="360.0" height="122.0" rx="12" fill="#e5f7ed" stroke="#258a55" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="700.0" y="1113.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#172033"><tspan x="700.0" dy="0" font-weight="700">Path #2</tspan><tspan x="700.0" dy="18">decode · tc 3 / tp 3</tspan><tspan x="700.0" dy="18">3 rounds · 12 transitions</tspan><tspan x="700.0" dy="18">decode record: mr[id_1.s, id_1.f, 0, id_2.f,</tspan></text></g>
+<g id="state-8" data-kind="se"><title>State 8 · FSE_b
+QASM: ./FSE_b.qasm
+data: m · flag: none
+Round 3 · tp #1</title><rect x="990.0" y="1069.0" width="360.0" height="132.0" rx="12" fill="#e7f0ff" stroke="#3973cf" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="1170.0" y="1113.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#172033"><tspan x="1170.0" dy="0" font-weight="700">State 8 · FSE_b</tspan><tspan x="1170.0" dy="18">QASM: ./FSE_b.qasm</tspan><tspan x="1170.0" dy="18">data: m · flag: none</tspan><tspan x="1170.0" dy="18">Round 3 · tp #1</tspan></text></g>
+<g id="state-9" data-kind="terminal"><title>Path #3
+decode · tc 3 / tp 3
+3 rounds · 14 transitions
+decode record: mr[id_1.s, id_1.f, id_2.s, id_2.f, id_3.s, id_3.f, id_4.s]</title><rect x="520.0" y="1319.0" width="360.0" height="122.0" rx="12" fill="#e5f7ed" stroke="#258a55" stroke-width="2" filter="url(#dag-shadow)"/>
+<text x="700.0" y="1358.0" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#172033"><tspan x="700.0" dy="0" font-weight="700">Path #3</tspan><tspan x="700.0" dy="18">decode · tc 3 / tp 3</tspan><tspan x="700.0" dy="18">3 rounds · 14 transitions</tspan><tspan x="700.0" dy="18">decode record: mr[id_1.s, id_1.f, id_2.s,</tspan></text></g>
+</svg>
