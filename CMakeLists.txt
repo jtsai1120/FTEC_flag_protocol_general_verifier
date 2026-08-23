@@ -46,6 +46,10 @@ target_include_directories(ftec_core PUBLIC include)
 target_link_libraries(ftec_core PUBLIC fpdl_parser)
 target_compile_options(ftec_core PRIVATE -Wall -Wextra -Wpedantic)
 
+add_executable(ftec-verify src/ftec/verify_main.cpp)
+target_link_libraries(ftec-verify PRIVATE ftec_core)
+target_compile_options(ftec-verify PRIVATE -Wall -Wextra -Wpedantic)
+
 add_subdirectory(backends/dd)
 
 if(BUILD_TESTING)
