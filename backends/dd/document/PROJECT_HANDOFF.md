@@ -145,9 +145,9 @@ qubit index 超界 / `control==target` 的例外處理,全部通過。
 
 **建置狀態**:已實際 clone `utwente-fmt/buddy`、跑 `autoreconf -fi` +
 `./configure --disable-shared --enable-static` + `make -C src` 編出
-`libbdd.a`,並用它把 `src/` 跟 `test/` 下所有東西編譯連結執行過,五個測試皆通過
-(`-Wall -Wextra` 零警告)。`buddy_src/` 目前放在專案目錄底下,`Makefile` 裡的
-`BUDDY_DIR` 就指向它。
+`libbdd.a`。**這段已經過時**:併入 `FTEC_flag_protocol_general_verifier` 之後,
+BuDDy 改由 `cmake/BuDDy.cmake` 當成一般 CMake target 直接編(它唯一需要的 `config.h`
+只有三個版本巨集,由我們 `configure_file` 產生),**不再需要 autotools**。
 
 ---
 
@@ -245,7 +245,7 @@ PauliSetBDD apply_CX(int control, int target) const;
 
 ```
 pauli_bdd/
-├── Makefile
+├── CMakeLists.txt
 ├── document/
 │   ├── PROJECT_HANDOFF.md   # 本文件
 │   ├── README.md            # 建置說明 + API 速覽 + 設計重點
@@ -272,16 +272,14 @@ pauli_bdd/
 │   ├── qasm_test.cpp         # QASM 解析/傳遞/syndrome 分裂/chain
 │   ├── stabilizer_test.cpp   # N(S)\S 查詢(含窮舉參考比對)
 │   └── flow_check_test.cpp   # 端到端逐分支檢查(含窮舉比對)
-└── buddy_src/                # BuDDy 原始碼
+                             # (BuDDy 由 CMake 取得,不在版控裡)
 ```
 
-**所有執行檔都由 `make` 產生在 `test/` 底下**(`test/demo`、`test/qasm_test`、
-`test/propagate` 等)。`make check` 會依序跑完所有測試。
+**所有執行檔都由 CMake 產生在 `build/backends/dd/` 底下**(`test/demo`、`test/qasm_test`、
+`dd-propagate` 等),`ctest --test-dir build` 會跑完全部。
 
-`buddy_src/` 已經 clone + 編譯完成,目前放在**專案目錄底下**
-(`buddy_src/src/.libs/libbdd.a`),`Makefile` 裡的 `BUDDY_DIR` 就指向它,不需要
-再調整。若換到新環境、`buddy_src/` 不存在,照 `document/README.md`「建置步驟」第 1 節
-重新 `git clone` + 編譯即可。
+BuDDy 由根目錄的 CMake 自動 fetch 並編譯;已有 checkout 時可用
+`-DFTEC_BUDDY_SOURCE_DIR=<path>` 指過去。詳見 `document/README.md`「建置」。
 
 ---
 
@@ -564,7 +562,7 @@ cache**。
 ### 7.7 CLI
 
 ```bash
-./test/propagate <tau> <circuit.qasm> [more.qasm ...] [--list[=N]]
+./build/backends/dd/dd-propagate <tau> <circuit.qasm> [more.qasm ...] [--list[=N]]
 ```
 
 `tau` 在前,之後可以接**多個** qasm 檔(就是一條 chain)。
@@ -692,7 +690,7 @@ FlowCheckResult check_flow(const StabilizerCode &, const QasmPropagation &, bool
 ### 9.2 CLI
 
 ```bash
-./test/propagate 1 examples/five_qubit_se.qasm --code=examples/five_qubit.code
+./build/backends/dd/dd-propagate 1 examples/five_qubit_se.qasm --code=examples/five_qubit.code
 ```
 
 `--code=FILE` 一行一個 generator(空行與 `#`、`//` 註解忽略)。
@@ -716,7 +714,7 @@ FlowCheckResult check_flow(const StabilizerCode &, const QasmPropagation &, bool
 分裂、多回合串接、`N(S)\S` 配對查詢、以及逐分支掃描,全部已實作並通過測試:
 
 ```bash
-make check
+ctest --test-dir build -R '^dd\.'
 ```
 
 下一步(尚未開始):

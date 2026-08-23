@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
-project(fpdl_parser LANGUAGES CXX)
+project(ftec_verifier LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+include(CTest)
+
+# BuDDy first: the decision-diagram backend links against it.
+include(BuDDy)
 
 add_library(fpdl_parser
     src/fpdl_parser.cpp
@@ -29,7 +36,8 @@ target_link_libraries(fpdl-path-dag PRIVATE fpdl_path_graph)
 add_executable(fpdl-dag-graph src/dag_graph_main.cpp)
 target_link_libraries(fpdl-dag-graph PRIVATE fpdl_path_graph)
 
-include(CTest)
+add_subdirectory(backends/dd)
+
 if(BUILD_TESTING)
     add_executable(fpdl_parser_tests tests/parser_tests.cpp)
     target_link_libraries(fpdl_parser_tests PRIVATE fpdl_parser)

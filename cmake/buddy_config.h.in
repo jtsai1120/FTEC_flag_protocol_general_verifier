@@ -1,0 +1,11 @@
+/* Minimal stand-in for the config.h that BuDDy's autotools build generates.
+ *
+ * Only kernel.c includes it, and the only things the sources actually read
+ * from it are the three version macros below (bdd_versionstr and
+ * bdd_versionnum). Everything else autoconf probes for is unused, so building
+ * BuDDy needs no autotools at all -- see cmake/BuDDy.cmake. */
+#pragma once
+
+#define MAJOR_VERSION   @FTEC_BUDDY_MAJOR@
+#define MINOR_VERSION   @FTEC_BUDDY_MINOR@
+#define PACKAGE_VERSION "@FTEC_BUDDY_MAJOR@.@FTEC_BUDDY_MINOR@"

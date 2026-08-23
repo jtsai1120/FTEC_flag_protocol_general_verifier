@@ -25,7 +25,7 @@ measurement qubit 的 syndrome 分裂)+ **多回合串接**(`PauliFlow`:一條 p
 
 ```
 pauli_bdd/
-├── Makefile
+├── CMakeLists.txt
 ├── document/
 │   ├── README.md              # 本文件
 │   ├── PROJECT_HANDOFF.md     # 專案交接報告
@@ -59,49 +59,27 @@ pauli_bdd/
 **執行檔**都由 `make` 產生在 `test/` 底下:`test/demo`、`test/reorder_test`、
 `test/gates_test`、`test/subgroup_test`、`test/qasm_test`、`test/stabilizer_test`、`test/flow_check_test`、`test/propagate`。
 
-## 建置步驟
+## 建置
 
-### 1. 取得並編譯 BuDDy(先決條件,只需做一次)
-
-```bash
-git clone --depth 1 https://github.com/utwente-fmt/buddy.git buddy_src
-cd buddy_src
-autoreconf -fi
-./configure --disable-shared --enable-static
-make -C src
-```
-
-完成後你會在 `buddy_src/src/bdd.h` 跟 `buddy_src/src/.libs/libbdd.a` 得到頭檔跟靜態函式庫。
-若你不想每個新環境都重新 autoreconf,`make -C src install` 也可以裝到系統路徑,
-之後就不需要 `BUDDY_DIR`,直接改 `Makefile` 裡的 `BUDDY_INC`/`BUDDY_LIB` 指向系統路徑即可。
-
-### 2. 編譯 PauliSetBDD
-
-`Makefile` 裡的 `BUDDY_DIR` 預設是 `buddy_src`,也就是假設它就在專案目錄底下
-(上面的 `git clone` 指令若在專案根目錄執行就會是這樣);放在別處記得改這個變數。
+這個目錄現在是 `FTEC_flag_protocol_general_verifier` 的一個 backend,由專案根目錄的
+CMake 一起建置——**不需要 autotools**。BuDDy 由 `cmake/BuDDy.cmake` 直接當成一般的
+CMake target 編(它唯一真正需要的 `config.h` 只有三個版本巨集,由我們產生)。
 
 ```bash
-make          # 編出 test/ 底下所有執行檔
-make check    # 依序跑完所有測試
+cd <專案根目錄>
+cmake -S . -B build
+cmake --build build -j
+ctest --test-dir build            # 全部測試,dd.* 是這個 backend 的
 ```
 
-想單獨跑某一個:
+BuDDy 預設會自動 fetch。已經有 checkout 的話可以指過去,省下下載:
 
 ```bash
-./test/qasm_test
+cmake -S . -B build -DFTEC_BUDDY_SOURCE_DIR=/path/to/buddy
 ```
 
-跑一個實際電路(`tau` 是整條 path 的 fault 數上限):
-
-```bash
-./test/propagate 2 examples/example.qasm
-```
-
-串接多個電路(多回合 syndrome extraction):
-
-```bash
-./test/propagate 2 round1.qasm round2.qasm round3.qasm
-```
+建出來的執行檔在 `build/backends/dd/`:各個 `dd_*` 測試,以及單機驅動程式
+`dd-propagate`(不經過 FPDL、直接跑一串電路時最方便)。
 
 ## 設計重點回顧(對應之前討論的決定)
 
@@ -346,7 +324,7 @@ level 遞迴,把被跳過的變數(就是 don't-care)展開成兩個分支,每�
 CLI 也接了這個:
 
 ```bash
-./test/propagate 1 examples/example.qasm --list=6
+./build/backends/dd/dd-propagate 1 examples/example.qasm --list=6
 ```
 
 `--list` **只印 data register 的部分**——ancilla 已經被 reset 成 identity,它原本
@@ -797,7 +775,7 @@ r.failures;          // 每條失效的 path:t、mr、以及 witness pair
 ### CLI
 
 ```bash
-./test/propagate 1 examples/five_qubit_se.qasm --code=examples/five_qubit.code
+./build/backends/dd/dd-propagate 1 examples/five_qubit_se.qasm --code=examples/five_qubit.code
 ```
 
 `--code=FILE` 的格式是一行一個 generator(空行與 `#`、`//` 註解會忽略)。輸出:
