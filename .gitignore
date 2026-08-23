@@ -1,0 +1,19 @@
+# BuDDy is an external dependency with its own git history -- it is cloned and
+# built separately. See document/README.md "建置步驟" for the exact commands.
+buddy_src/
+
+# Binaries `make` writes into test/ (the sources next to them are tracked).
+/test/demo
+/test/reorder_test
+/test/gates_test
+/test/subgroup_test
+/test/qasm_test
+/test/stabilizer_test
+/test/flow_check_test
+/test/propagate
+
+# Scratch QASM the tests write beside themselves; normally cleaned up, but they
+# survive a failed run. Also catches macOS AppleDouble files.
+._*
+
+.DS_Store

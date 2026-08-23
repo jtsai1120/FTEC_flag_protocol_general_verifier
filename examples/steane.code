@@ -1,0 +1,9 @@
+# Steane [[7,1,3]] code: 6 generators over 7 data qubits.
+# X-type checks
+IIIXXXX
+IXXIIXX
+XIXIXIX
+# Z-type checks
+IIIZZZZ
+IZZIIZZ
+ZIZIZIZ
