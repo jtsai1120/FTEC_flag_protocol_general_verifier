@@ -2,15 +2,49 @@
 #include "ftec/dag.hpp"
 #include "ftec/verify.hpp"
 
+#include <sys/resource.h>
+
+#include <chrono>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace {
+
+// Peak resident set of this process. getrusage reports ru_maxrss in bytes on
+// macOS and in kilobytes everywhere else, which is a difference that silently
+// makes the number wrong by 1024 if it is not handled.
+std::size_t peak_memory_bytes() {
+    rusage usage{};
+    if (getrusage(RUSAGE_SELF, &usage) != 0) return 0;
+#if defined(__APPLE__)
+    return static_cast<std::size_t>(usage.ru_maxrss);
+#else
+    return static_cast<std::size_t>(usage.ru_maxrss) * 1024;
+#endif
+}
+
+std::string human_bytes(std::size_t bytes) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(1);
+    if (bytes >= (1u << 30)) out << static_cast<double>(bytes) / (1u << 30) << " GiB";
+    else if (bytes >= (1u << 20)) out << static_cast<double>(bytes) / (1u << 20) << " MiB";
+    else out << static_cast<double>(bytes) / (1u << 10) << " KiB";
+    return out.str();
+}
+
+std::string human_seconds(std::chrono::steady_clock::duration elapsed) {
+    const double seconds = std::chrono::duration<double>(elapsed).count();
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(seconds < 10 ? 2 : 1) << seconds << " s";
+    return out.str();
+}
 
 void usage(const char* argv0) {
     std::cerr
@@ -187,14 +221,27 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    const auto started = std::chrono::steady_clock::now();
     try {
         const auto expansion = expand(source, bound, max_paths);
         const auto dag = ftec::build_dag(expansion.result, source.parent_path());
+        const auto expanded_at = std::chrono::steady_clock::now();
+
+        // Printed at the end of every route out of here, including the early
+        // ones, so a run that was abandoned still says what it cost.
+        const auto report_cost = [&](std::chrono::steady_clock::duration traversal) {
+            std::cout << "\nexpansion       : " << human_seconds(expanded_at - started) << "\n"
+                      << "traversal       : " << human_seconds(traversal) << "\n"
+                      << "total runtime   : "
+                      << human_seconds(std::chrono::steady_clock::now() - started) << "\n"
+                      << "peak memory     : " << human_bytes(peak_memory_bytes()) << "\n";
+        };
 
         if (dag_only) {
             print_dag(dag);
             std::cout << "\nBMC bound  : " << expansion.bound
                       << (bound ? " (given)" : " (found by doubling)") << "\n";
+            report_cost(std::chrono::steady_clock::duration::zero());
             return 0;
         }
 
@@ -209,7 +256,9 @@ int main(int argc, char** argv) {
             return 2;
         }
 
+        const auto traversal_started = std::chrono::steady_clock::now();
         const auto result = ftec::verify(dag, *backend, options);
+        const auto traversal = std::chrono::steady_clock::now() - traversal_started;
 
         std::cout << "protocol        : " << result.protocol << "\n"
                   << "code            : [[" << dag.code.n << ',' << dag.code.k << ','
@@ -230,6 +279,7 @@ int main(int argc, char** argv) {
                              "completed";
             }
             std::cout << "\n";
+            report_cost(traversal);
             return 0;
         }
 
@@ -242,6 +292,7 @@ int main(int argc, char** argv) {
                 std::cout << "        " << failure.failure.detail << "\n";
             }
         }
+        report_cost(traversal);
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "error: " << error.what() << "\n";

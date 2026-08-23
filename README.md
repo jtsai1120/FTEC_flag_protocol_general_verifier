@@ -48,11 +48,33 @@ ctest --test-dir build
 ## 使用
 
 ```bash
-./build/ftec-verify "protocols/CR17_[[5,1,3]]/CR17_[[5,1,3]].fpdl"          # 走完所有路徑
-./build/ftec-verify "protocols/CR17_[[5,1,3]]/CR17_[[5,1,3]].fpdl" --dag    # 只看合併後的結構
+./build/ftec-verify <protocol.fpdl> [選項]
 ```
 
-`--bound=N` 固定 BMC bound、`--first` 遇到第一條失效路徑就停、`--backend=NAME` 選解法。
+```bash
+./build/ftec-verify "protocols/CR17_[[5,1,3]]/CR17_[[5,1,3]].fpdl" --backend=dd
+./build/ftec-verify "protocols/CR17_[[5,1,3]]/CR17_[[5,1,3]].fpdl" --dag
+```
+
+| 選項 | 預設值 | 說明 |
+|---|---|---|
+| `--backend=NAME` | `mock` | 用哪個解法。`dd` 是真正的驗證,`mock` 只走結構(見下)。 |
+| `--bound=N` | 倍增搜尋 | 固定 BMC bound。不給的話從 16 開始倍增,直到展開完整為止(上限 65536)。 |
+| `--max-paths=N` | `5000` | 符號路徑數超過就放棄。 |
+| `--first` | 關閉 | 遇到第一條不受保護的路徑就停。`min_fault_count` 仍然正確,只是不再列出其他失效路徑。 |
+| `--dag` | 關閉 | 只印合併後的路徑結構然後結束,不做走訪。 |
+
+每次跑完都會印出成本,展開與走訪分開計:
+
+```
+expansion       : 4.90 s
+traversal       : 3.36 s
+total runtime   : 8.27 s
+peak memory     : 66.9 MiB
+```
+
+分開計是有意義的——CB18 [[17,1,5]] 的 8.3 秒裡有 4.9 秒花在 BMC bound 的倍增搜尋上,
+跟走訪本身無關。`--bound=N` 若已知答案就能省下這段。
 
 其餘工具維持原樣:`fpdlc`(解析成 paths JSON)、`fpdl-path-graph`、`fpdl-path-dag`、
 `fpdl-dag-graph`(視覺化),以及 `build/backends/dd/dd-propagate`(直接對一串 QASM 跑
