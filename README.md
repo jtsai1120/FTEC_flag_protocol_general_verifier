@@ -110,12 +110,26 @@ virtual std::vector<std::pair<Outcome, StateId>> step(StateId, const CircuitRef&
 
 目前的實作狀態:
 
-- **mock** —— 回報所有可能的測量結果、從不失效。用來檢查走訪與路由正確、以及證明
-  `ftec::Backend` 真的是抽象層而不只是把 BDD 程式碼包一層。**它不判斷容錯性。**
-- **dd** —— decision diagram over Pauli sets,在 `backends/dd/`,自身功能完整且有 7 組
-  測試(含與窮舉實作的比對),但**還沒接到這條管線上**:它的 QASM 前端目前只吃受限方言
-  (兩個叫 `qd`/`qm` 的暫存器、沒有自訂 gate、沒有 `reset`、沒有 mid-circuit `measure`),
-  而這些協定四項都用到。詳見 `backends/dd/document/`。
+- **dd** —— decision diagram over Pauli sets,在 `backends/dd/`。把 error 集合帶過電路的
+  每一條指令、在每個 2-qubit gate 注入全部 16 種 Pauli、在每次 `measure` 依被測 qubit 的
+  **x 分量**分裂、照 `reset` 指令清掉 ancilla,最後在每個 terminal 問「有沒有兩個 error
+  的乘積落在 `N(S)\S`」。
+- **mock** —— 不模擬任何物理:從全零 outcome 出發,在預算內才回報偏離的 outcome。用來
+  檢查走訪、路由與 record 記帳,以及證明 `ftec::Backend` 真的是抽象層。
+  **它不判斷容錯性**,CLI 的輸出也會這樣說。
+
+### 已驗證的結果
+
+| 協定 | code | tau | 結果 |
+|---|---|---|---|
+| CR17(Chao–Reichardt flag) | [[5,1,3]] | 1 | **無不受保護的路徑** |
+| Bha23 | [[5,1,3]] | 1 | **無不受保護的路徑** |
+
+兩個 distance-3 的 flag 協定都通過,跟它們宣稱的一致。
+
+distance-5 的協定(CB18 [[17,1,5]]、LL25 [[19,1,5]])**預期要跑數小時**,尚未驗證。
+`tau=2` 配上 17–19 個 data qubit,讓 fault 注入的層數與每個 terminal 的 `N(S)\S` 查詢
+(一次橫跨 34–38 個變數的基底變換)都變重。要不要、以及怎麼加速,是還沒決定的事。
 
 ## 還沒做的事
 
