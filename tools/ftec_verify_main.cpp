@@ -222,6 +222,7 @@ int main(int argc, char** argv) {
     }
 
     const auto started = std::chrono::steady_clock::now();
+    ftec::BackendPtr backend;
     try {
         const auto expansion = expand(source, bound, max_paths);
         const auto dag = ftec::build_dag(expansion.result, source.parent_path());
@@ -230,6 +231,10 @@ int main(int argc, char** argv) {
         // Printed at the end of every route out of here, including the early
         // ones, so a run that was abandoned still says what it cost.
         const auto report_cost = [&](std::chrono::steady_clock::duration traversal) {
+            if (backend) {
+                const std::string extra = backend->statistics();
+                if (!extra.empty()) std::cout << "\n" << extra << "\n";
+            }
             std::cout << "\nexpansion       : " << human_seconds(expanded_at - started) << "\n"
                       << "traversal       : " << human_seconds(traversal) << "\n"
                       << "total runtime   : "
@@ -245,7 +250,6 @@ int main(int argc, char** argv) {
             return 0;
         }
 
-        ftec::BackendPtr backend;
         if (backend_name == "dd") {
             backend = ftec::make_dd_backend();
         } else if (backend_name == "mock") {

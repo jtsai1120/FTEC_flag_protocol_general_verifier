@@ -101,16 +101,7 @@ protocol CB_18_[[17,1,5]]_plain:
                 n_flag   += 1;
                 s_prev    = ⊥;
                 diff_prev = 0;
-                
-                cnt i = 0;
-                while(true) {
-                    if (f[i] == 1) { break; }
-                    i++;
-                }
-                if (i <= 13) { m.push(i); }
-                else if (i <= 16) { m.push(14); }
-                else { m.push(15); }
-
+                m.push(f);
                 continue;   
             }
 

@@ -58,6 +58,17 @@ public:
 
     std::vector<std::pair<Outcome, StateId>> step(StateId id,
                                                   const CircuitRef& circuit) override {
+        ++step_calls_;
+        // Two different measurement records often leave the same set of errors
+        // behind -- the record is what the decoder saw, not what survived --
+        // and stepping depends only on the set. BuDDy hash-conses, so equal
+        // sets are literally the same nodes and a key of their roots is exact.
+        const CacheKey key{fingerprint(states_[id]), circuit.qasm.string()};
+        if (const auto found = step_cache_.find(key); found != step_cache_.end()) {
+            ++step_hits_;
+            return found->second;
+        }
+
         const QasmProgram& program = program_for(circuit);
         const Layout       layout  = layout_for(program, circuit);
         grow_to(layout.total);
@@ -118,11 +129,41 @@ public:
             states_.push_back(std::move(cleaned));
             out.emplace_back(std::move(outcome), states_.size() - 1);
         }
+        step_cache_.emplace(key, out);
         return out;
     }
 
 
     std::optional<Failure> check(StateId id) override {
+        ++check_calls_;
+        const auto print = fingerprint(states_[id]);
+        if (const auto found = check_cache_.find(print); found != check_cache_.end()) {
+            ++check_hits_;
+            return found->second;
+        }
+        const auto answer = check_uncached(id);
+        check_cache_.emplace(print, answer);
+        return answer;
+    }
+
+    std::string statistics() const override {
+        std::ostringstream out;
+        out << "dd backend      : " << step_calls_ << " step(s), " << step_hits_ << " from cache"
+            << " (" << percent(step_hits_, step_calls_) << "%); " << check_calls_
+            << " check(s), " << check_hits_ << " from cache (" << percent(check_hits_, check_calls_)
+            << "%)\n"
+            << "distinct states : " << check_cache_.size() << " checked, " << step_cache_.size()
+            << " stepped";
+        return out.str();
+    }
+
+private:
+    static int percent(std::size_t part, std::size_t whole) {
+        return whole == 0 ? 0 : static_cast<int>(100.0 * static_cast<double>(part) /
+                                                 static_cast<double>(whole));
+    }
+
+    std::optional<Failure> check_uncached(StateId id) {
         const auto& state = states_[id];
         for (std::size_t t = 0; t < state.size(); ++t) {
             if (state[t].is_empty()) continue;
@@ -138,6 +179,7 @@ public:
         return std::nullopt;
     }
 
+public:
     std::string describe(StateId id) const override {
         std::ostringstream out;
         for (std::size_t t = 0; t < states_[id].size(); ++t) {
@@ -152,6 +194,8 @@ private:
         if (!owns_session_) return;
         owns_session_ = false;
         try {
+            step_cache_.clear();
+            check_cache_.clear();
             states_.clear();
             code_.reset();
             PauliSetBDD::done();
@@ -175,9 +219,25 @@ private:
         return true;
     }
 
+    // A state's identity, exact because BuDDy shares equal diagrams.
+    using Fingerprint = std::vector<int>;
+    using CacheKey    = std::pair<Fingerprint, std::string>;
+
+    static Fingerprint fingerprint(const std::vector<PauliSetBDD>& state) {
+        Fingerprint print;
+        print.reserve(state.size());
+        for (const auto& level : state) print.push_back(level.raw().id());
+        return print;
+    }
+
     void grow_to(int qubits) {
         if (qubits <= allocated_) return;
         PauliSetBDD::grow(qubits);
+        // Root ids survive a grow but the sets they stand for do not: the new
+        // variables are unconstrained until they are pinned below. Rather than
+        // reason about whether a stale key could still be hit, drop them.
+        step_cache_.clear();
+        check_cache_.clear();
         // Growing leaves the new variables unconstrained, so every set would
         // silently gain 4^added configurations on them. Pin them at once.
         std::vector<int> added;
@@ -360,6 +420,10 @@ private:
     int  tau_          = 0;
     int  allocated_    = 0;
     bool owns_session_ = false;
+
+    std::map<CacheKey, std::vector<std::pair<Outcome, StateId>>> step_cache_;
+    std::map<Fingerprint, std::optional<Failure>>                check_cache_;
+    std::size_t step_calls_ = 0, step_hits_ = 0, check_calls_ = 0, check_hits_ = 0;
 
     std::unique_ptr<pbdd::StabilizerCode>      code_;
     std::map<std::string, QasmProgram>         programs_;

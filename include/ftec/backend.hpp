@@ -73,6 +73,10 @@ public:
 
     // For diagnostics only.
     [[nodiscard]] virtual std::string describe(StateId) const { return {}; }
+
+    // Whatever the backend wants to say about how the run went; printed after
+    // the result. Empty when it has nothing to add.
+    [[nodiscard]] virtual std::string statistics() const { return {}; }
 };
 
 using BackendPtr = std::unique_ptr<Backend>;
