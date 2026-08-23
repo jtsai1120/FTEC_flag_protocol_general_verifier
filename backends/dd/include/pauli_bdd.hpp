@@ -71,12 +71,13 @@ public:
     //   - X, Z are themselves Pauli-group elements: applying them means
     //     *composing* (group-multiplying, phase ignored) the gate's own
     //     (x,z) onto every string's per-qubit (x,z) -- an XOR on one bit.
-    //   - H, CX, CZ are Clifford (not Pauli) elements: applying them means
+    //   - H, S, CX, CY, CZ are Clifford (not Pauli) elements: applying them means
     //     *conjugation*, P -> U P U^ (the standard stabilizer-tableau
     //     update rule), since they have no (x,z) of their own to compose.
     PauliSetBDD apply_X(int q) const;
     PauliSetBDD apply_Z(int q) const;
     PauliSetBDD apply_H(int q) const;
+    PauliSetBDD apply_S(int q) const;
     PauliSetBDD apply_CX(int control, int target) const;
     PauliSetBDD apply_CY(int control, int target) const;
     PauliSetBDD apply_CZ(int control, int target) const;

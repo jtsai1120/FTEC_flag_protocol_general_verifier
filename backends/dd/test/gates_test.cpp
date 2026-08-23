@@ -41,6 +41,17 @@ int main() {
     assert(PauliSetBDD::single("XI").apply_H(0).apply_H(0) == PauliSetBDD::single("XI"));
     std::cout << "apply_H tests passed\n";
 
+    // --- apply_S: conjugation, (x,z) -> (x, x^z). X -> Y -> X, Z fixed.
+    assert(PauliSetBDD::single("II").apply_S(0) == PauliSetBDD::single("II"));
+    assert(PauliSetBDD::single("XI").apply_S(0) == PauliSetBDD::single("YI"));
+    assert(PauliSetBDD::single("YI").apply_S(0) == PauliSetBDD::single("XI"));
+    assert(PauliSetBDD::single("ZI").apply_S(0) == PauliSetBDD::single("ZI"));
+    assert(PauliSetBDD::single("IX").apply_S(1) == PauliSetBDD::single("IY"));
+    // Involution here too, for a different reason than the rest: S^2 = Z, and
+    // conjugating by a Pauli leaves the type alone.
+    assert(PauliSetBDD::single("XY").apply_S(0).apply_S(0) == PauliSetBDD::single("XY"));
+    std::cout << "apply_S tests passed\n";
+
     // --- apply_CX(control=0, target=1): conjugation,
     //   x_t' = x_t ^ x_c,  z_c' = z_c ^ z_t,  x_c'/z_t' unchanged.
     assert(PauliSetBDD::single("XI").apply_CX(0, 1) == PauliSetBDD::single("XX"));
@@ -134,6 +145,10 @@ int main() {
 
     threw = false;
     try { PauliSetBDD::single("II").apply_CY(0, 7); } catch (const std::invalid_argument &) { threw = true; }
+    assert(threw);
+
+    threw = false;
+    try { PauliSetBDD::single("II").apply_S(9); } catch (const std::invalid_argument &) { threw = true; }
     assert(threw);
     std::cout << "error handling tests passed\n";
 

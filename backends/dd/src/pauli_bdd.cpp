@@ -185,6 +185,20 @@ PauliSetBDD PauliSetBDD::apply_H(int q) const {
     return PauliSetBDD(result);
 }
 
+PauliSetBDD PauliSetBDD::apply_S(int q) const {
+    check_qubit(q, n_, "apply_S");
+    // Conjugation: S X S^ = Y, S Z S^ = Z, so (x,z) -> (x, x XOR z).
+    //
+    // S and its adjoint act identically here. S^ X S = -Y differs from S X S^
+    // = Y only by a sign, and this representation does not track phase, so one
+    // implementation covers both sdg and s. Two applications are *not* the
+    // identity, unlike the other gates: S^2 = Z, whose conjugation sends
+    // (x,z) to (x, z) again only because the phase it introduces is dropped --
+    // and indeed (x, x^z) applied twice returns (x, z).
+    return PauliSetBDD(substitute(f_, zvar(q),
+                                  bdd_ithvar(zvar(q)) ^ bdd_ithvar(xvar(q))));
+}
+
 PauliSetBDD PauliSetBDD::apply_CX(int control, int target) const {
     check_qubit(control, n_, "apply_CX (control)");
     check_qubit(target, n_, "apply_CX (target)");

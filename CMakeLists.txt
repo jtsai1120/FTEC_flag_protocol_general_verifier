@@ -39,6 +39,7 @@ target_link_libraries(fpdl-dag-graph PRIVATE fpdl_path_graph)
 # The verifier core: merge the symbolic paths into a trie and walk it,
 # handing each circuit to whichever backend was chosen.
 add_library(ftec_core
+    src/ftec/qasm.cpp
     src/ftec/dag.cpp
     src/ftec/verify.cpp
 )
@@ -63,6 +64,11 @@ if(BUILD_TESTING)
     add_test(NAME parser_examples
              COMMAND fpdl_parser_tests ${FPDL_EXAMPLES})
     add_test(NAME path_graph COMMAND fpdl_path_graph_tests)
+
+    file(GLOB QASM_EXAMPLES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/protocols/*/*.qasm")
+    add_executable(qasm_tests tests/qasm_tests.cpp)
+    target_link_libraries(qasm_tests PRIVATE ftec_core)
+    add_test(NAME qasm_frontend COMMAND qasm_tests ${QASM_EXAMPLES})
 
     add_executable(ftec_tests tests/ftec_tests.cpp)
     target_link_libraries(ftec_tests PRIVATE ftec_core)
