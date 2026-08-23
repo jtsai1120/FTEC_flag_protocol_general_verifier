@@ -19,6 +19,21 @@
                                                          └─────────────────────┘
 ```
 
+## 檔案結構
+
+```
+CMakeLists.txt
+cmake/              BuDDy 的取得與建置
+docs/               FPDL 與 parser 的說明,samples/ 是文件裡指令的產出範例
+protocols/          協定測資,一個目錄一個協定(.fpdl + 它引用的 .qasm)
+include/fpdl/       前端:協定解析、路徑圖
+include/ftec/       驗證核心:trie、backend 介面、走訪
+src/fpdl/  src/ftec/
+tools/              各個執行檔的進入點
+tests/
+backends/dd/        decision-diagram backend(自成一套,含自己的文件與測試)
+```
+
 ## 建置
 
 ```bash
@@ -33,8 +48,8 @@ ctest --test-dir build
 ## 使用
 
 ```bash
-./build/ftec-verify "CR17_[[5,1,3]]/CR17_[[5,1,3]].fpdl"          # 走完所有路徑
-./build/ftec-verify "CR17_[[5,1,3]]/CR17_[[5,1,3]].fpdl" --dag    # 只看合併後的結構
+./build/ftec-verify "protocols/CR17_[[5,1,3]]/CR17_[[5,1,3]].fpdl"          # 走完所有路徑
+./build/ftec-verify "protocols/CR17_[[5,1,3]]/CR17_[[5,1,3]].fpdl" --dag    # 只看合併後的結構
 ```
 
 `--bound=N` 固定 BMC bound、`--first` 遇到第一條失效路徑就停、`--backend=NAME` 選解法。

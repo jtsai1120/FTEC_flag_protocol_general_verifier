@@ -76,13 +76,13 @@ are diamonds, and every leaf shows its path ID and termination policy.
 Create a standalone SVG (Graphviz is not required):
 
 ```sh
-./build/fpdl-path-graph protocol.paths.json -o protocol.paths.svg
+./build/fpdl-path-graph protocol.paths.json -o docs/samples/protocol.paths.svg
 ```
 
 Create Graphviz DOT instead:
 
 ```sh
-./build/fpdl-path-graph protocol.paths.json -o protocol.paths.dot
+./build/fpdl-path-graph protocol.paths.json -o docs/samples/protocol.paths.dot
 ```
 
 Useful options:

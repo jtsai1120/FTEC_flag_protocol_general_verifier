@@ -13,27 +13,27 @@ include(CTest)
 include(BuDDy)
 
 add_library(fpdl_parser
-    src/fpdl_parser.cpp
+    src/fpdl/parser.cpp
 )
 target_include_directories(fpdl_parser PUBLIC include)
 target_compile_options(fpdl_parser PRIVATE -Wall -Wextra -Wpedantic)
 
-add_executable(fpdlc src/main.cpp)
+add_executable(fpdlc tools/fpdlc_main.cpp)
 target_link_libraries(fpdlc PRIVATE fpdl_parser)
 
 add_library(fpdl_path_graph
-    src/path_graph.cpp
+    src/fpdl/path_graph.cpp
 )
 target_include_directories(fpdl_path_graph PUBLIC include)
 target_compile_options(fpdl_path_graph PRIVATE -Wall -Wextra -Wpedantic)
 
-add_executable(fpdl-path-graph src/graph_main.cpp)
+add_executable(fpdl-path-graph tools/path_graph_main.cpp)
 target_link_libraries(fpdl-path-graph PRIVATE fpdl_path_graph)
 
-add_executable(fpdl-path-dag src/dag_main.cpp)
+add_executable(fpdl-path-dag tools/path_dag_main.cpp)
 target_link_libraries(fpdl-path-dag PRIVATE fpdl_path_graph)
 
-add_executable(fpdl-dag-graph src/dag_graph_main.cpp)
+add_executable(fpdl-dag-graph tools/dag_graph_main.cpp)
 target_link_libraries(fpdl-dag-graph PRIVATE fpdl_path_graph)
 
 # The verifier core: merge the symbolic paths into a trie and walk it,
@@ -46,7 +46,7 @@ target_include_directories(ftec_core PUBLIC include)
 target_link_libraries(ftec_core PUBLIC fpdl_parser)
 target_compile_options(ftec_core PRIVATE -Wall -Wextra -Wpedantic)
 
-add_executable(ftec-verify src/ftec/verify_main.cpp)
+add_executable(ftec-verify tools/ftec_verify_main.cpp)
 target_link_libraries(ftec-verify PRIVATE ftec_core)
 target_compile_options(ftec-verify PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -59,7 +59,7 @@ if(BUILD_TESTING)
     add_executable(fpdl_path_graph_tests tests/path_graph_tests.cpp)
     target_link_libraries(fpdl_path_graph_tests PRIVATE fpdl_path_graph)
 
-    file(GLOB FPDL_EXAMPLES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/*/*.fpdl")
+    file(GLOB FPDL_EXAMPLES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/protocols/*/*.fpdl")
     add_test(NAME parser_examples
              COMMAND fpdl_parser_tests ${FPDL_EXAMPLES})
     add_test(NAME path_graph COMMAND fpdl_path_graph_tests)
