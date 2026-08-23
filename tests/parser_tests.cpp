@@ -45,6 +45,60 @@ int main(int argc, char** argv) {
                 std::cerr << argv[i] << ": invalid symbolic-path JSON\n";
                 return 1;
             }
+            // The code: block feeds a verifier backend directly, so every
+            // example must yield a usable one: sane [[n,k,d]], generators that
+            // are n qubits wide however they were written (dense letters or
+            // indexed Z1/X12 form), and a fault budget of floor((d-1)/2).
+            const auto& code = result.code;
+            if (code.n <= 0 || code.k <= 0 || code.d <= 0 || code.k >= code.n) {
+                std::cerr << argv[i] << ": implausible code parameters [["
+                          << code.n << ',' << code.k << ',' << code.d << "]]\n";
+                return 1;
+            }
+            if (code.fault_budget() != (code.d - 1) / 2) {
+                std::cerr << argv[i] << ": fault budget disagrees with the distance\n";
+                return 1;
+            }
+            if (code.generators.empty()) {
+                std::cerr << argv[i] << ": code block produced no generators\n";
+                return 1;
+            }
+            for (const auto& generator : code.generators) {
+                if (static_cast<int>(generator.size()) != code.n) {
+                    std::cerr << argv[i] << ": generator '" << generator << "' is "
+                              << generator.size() << " wide, expected " << code.n << '\n';
+                    return 1;
+                }
+                if (generator.find_first_not_of("IXYZ") != std::string::npos) {
+                    std::cerr << argv[i] << ": generator '" << generator
+                              << "' has a non-Pauli character\n";
+                    return 1;
+                }
+            }
+            // Every SE must name the quantum registers a backend needs, and a
+            // flagged SE must expose both the flag qubits and the flag bits.
+            for (const auto& path : result.paths) {
+                for (const auto& event : path.events) {
+                    if (event.data_qubits.empty() || event.syndrome_qubits.empty()) {
+                        std::cerr << argv[i] << ": SE '" << event.se_name
+                                  << "' does not name its qp/qm registers\n";
+                        return 1;
+                    }
+                    if (event.flag_qubits.has_value() != event.flag_register.has_value()) {
+                        std::cerr << argv[i] << ": SE '" << event.se_name
+                                  << "' has qf without cf, or the other way round\n";
+                        return 1;
+                    }
+                    for (const auto& measured : event.measures) {
+                        if (static_cast<int>(measured.size()) != code.n) {
+                            std::cerr << argv[i] << ": SE '" << event.se_name
+                                      << "' measures a generator of the wrong width\n";
+                            return 1;
+                        }
+                    }
+                }
+            }
+
             if (std::string(argv[i]).find("CB18_[[17,1,5]]_plain") != std::string::npos) {
                 for (const auto& path : result.paths) {
                     for (const auto& constraint : path.constraints) {

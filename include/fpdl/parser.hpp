@@ -41,6 +41,19 @@ struct SymbolicConstraint {
     std::string phase;
 };
 
+// The `code:` block. A verifier backend needs all of this: the generators
+// define the stabilizer group, and d fixes how many faults have to be
+// tolerated (tau = floor((d-1)/2)).
+struct CodeSpec {
+    int n = 0;
+    int k = 0;
+    int d = 0;
+    // One Pauli string per generator, e.g. "XZZXI"; each is n characters.
+    std::vector<std::string> generators;
+
+    [[nodiscard]] int fault_budget() const { return (d - 1) / 2; }
+};
+
 struct SEEvent {
     std::size_t round = 0;
     std::size_t invocation = 0;
@@ -48,11 +61,23 @@ struct SEEvent {
     std::string se_name;
     // Exact file value from the invoked SE's `file:` declaration.
     std::string qasm_file;
-    // QASM classical output registers declared by `cm:` and optional `cf:`.
+    // QASM *classical* output registers declared by `cm:` and optional `cf:`.
+    // The names predate the quantum-register fields below; "data_register"
+    // here means the classical syndrome register, not the data qubits.
     std::string data_register;
     std::optional<std::string> flag_register;
     std::string syndrome;
     std::optional<std::string> flag;
+
+    // QASM *quantum* registers declared by `qp:`, `qm:` and optional `qf:`.
+    // A backend needs these to know which qubits carry the encoded state
+    // across rounds and which are ancillas it may reset.
+    std::string data_qubits;
+    std::string syndrome_qubits;
+    std::optional<std::string> flag_qubits;
+
+    // The stabilizers this SE measures, from `g:`; one Pauli string each.
+    std::vector<std::string> measures;
 };
 
 struct SymbolicPath {
@@ -79,6 +104,7 @@ struct ParseOptions {
 
 struct ParseResult {
     std::string protocol_name;
+    CodeSpec code;
     std::vector<SymbolicPath> paths;
     std::vector<Diagnostic> diagnostics;
     bool truncated = false;

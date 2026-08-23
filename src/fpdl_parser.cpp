@@ -266,7 +266,7 @@ public:
         for (std::size_t i = 0; i < paths.size(); ++i) paths[i].id = i;
         diagnostics_.push_back({Diagnostic::Severity::Warning, start,
             "propositional Boolean constraints are SAT-checked, but bit-vector relations are not SMT-solved"});
-        return {protocol_name, std::move(paths), std::move(diagnostics_), truncated_};
+        return {protocol_name, code_, std::move(paths), std::move(diagnostics_), truncated_};
     }
 
 private:
@@ -333,11 +333,132 @@ private:
         return make(std::move(kind), "", std::move(edges), location);
     }
 
+    // Generator matrices come in two notations and both appear in the examples:
+    //
+    //   dense   [[X,Z,Z,X,I], ...]        one entry per qubit, n entries wide
+    //   sparse  [[Z1,Z2,Z3,Z4], ...]      only the non-identity positions,
+    //                                     Pauli letter then a 1-based index
+    //
+    // Either way a backend wants the dense Pauli string, so normalise here.
+    // Entries lex as Identifier tokens, since I/X/Y/Z and Z12 are identifiers.
+    std::vector<std::string> read_pauli_matrix(NodeId node, int width,
+                                               const std::string& what) {
+        const auto& rows = ast_.node(node);
+        if (rows.kind != "VectorLiteral") {
+            fail_at(rows.location, what + " must be a matrix of Pauli rows");
+        }
+        if (width <= 0) fail_at(rows.location, what + " needs the code width; is [[n,k,d]] missing?");
+
+        std::vector<std::string> out;
+        for (const auto& row_edge : rows.edges) {
+            const auto& row = ast_.node(row_edge.target);
+            if (row.kind != "VectorLiteral") {
+                fail_at(row.location, what + " must be a matrix of Pauli rows");
+            }
+
+            std::string dense;
+            std::string sparse(static_cast<std::size_t>(width), 'I');
+            bool saw_dense = false;
+            bool saw_sparse = false;
+
+            for (const auto& cell : row.edges) {
+                const auto& entry = ast_.node(cell.target);
+                if (entry.kind != "Identifier" || entry.value.empty() ||
+                    std::string("IXYZ").find(entry.value.front()) == std::string::npos) {
+                    fail_at(entry.location,
+                            what + " entries must be Pauli letters, found '" + entry.value + "'");
+                }
+
+                if (entry.value.size() == 1) {
+                    saw_dense = true;
+                    dense += entry.value;
+                    continue;
+                }
+
+                saw_sparse = true;
+                const std::string digits = entry.value.substr(1);
+                if (digits.find_first_not_of("0123456789") != std::string::npos) {
+                    fail_at(entry.location,
+                            what + " entry '" + entry.value + "' is neither a Pauli letter nor "
+                            "a letter followed by a qubit index");
+                }
+                const long long index = std::stoll(digits);
+                if (index < 1 || index > width) {
+                    fail_at(entry.location,
+                            what + " entry '" + entry.value + "' is outside qubits 1.." +
+                                std::to_string(width));
+                }
+                char& slot = sparse[static_cast<std::size_t>(index - 1)];
+                if (slot != 'I') {
+                    fail_at(entry.location,
+                            what + " names qubit " + digits + " twice in one generator");
+                }
+                slot = entry.value.front();
+            }
+
+            if (saw_dense && saw_sparse) {
+                fail_at(row.location, what + " mixes dense and indexed notation in one row");
+            }
+            if (saw_sparse) {
+                out.push_back(std::move(sparse));
+            } else {
+                if (static_cast<int>(dense.size()) != width) {
+                    fail_at(row.location,
+                            what + " row '" + dense + "' is " + std::to_string(dense.size()) +
+                                " qubits wide, expected " + std::to_string(width));
+                }
+                out.push_back(std::move(dense));
+            }
+        }
+        return out;
+    }
+
+    std::vector<long long> read_integer_row(NodeId node, const std::string& what) {
+        const auto& outer = ast_.node(node);
+        // `[[5,1,3]]` is a one-row matrix; accept a bare `[5,1,3]` too.
+        const auto& row = (outer.kind == "VectorLiteral" && outer.edges.size() == 1 &&
+                           ast_.node(outer.edges.front().target).kind == "VectorLiteral")
+                              ? ast_.node(outer.edges.front().target)
+                              : outer;
+        if (row.kind != "VectorLiteral") fail_at(row.location, what + " must be a list");
+        std::vector<long long> out;
+        for (const auto& cell : row.edges) {
+            const auto& leafnode = ast_.node(cell.target);
+            if (leafnode.kind != "Integer") {
+                fail_at(leafnode.location, what + " entries must be integers");
+            }
+            out.push_back(std::stoll(leafnode.value));
+        }
+        return out;
+    }
+
     NodeId parse_code() {
         const auto start = expect("code").location;
         expect(":");
         const auto parameters = parse_primary();
         const auto generators = parse_primary();
+
+        const auto nkd = read_integer_row(parameters, "code parameters [[n,k,d]]");
+        if (nkd.size() != 3) fail_at(start, "code parameters must be [[n,k,d]]");
+        code_.n = static_cast<int>(nkd[0]);
+        code_.k = static_cast<int>(nkd[1]);
+        code_.d = static_cast<int>(nkd[2]);
+        code_.generators = read_pauli_matrix(generators, code_.n, "code generators");
+
+        if (code_.d < 1) fail_at(start, "code distance must be at least 1");
+
+        // A stabilizer code on n qubits with k logical qubits has exactly n-k
+        // independent generators. Report a mismatch but do not refuse the
+        // parse: whether the generators really are independent and pairwise
+        // commuting is a question for whoever builds the group out of them,
+        // and that check belongs there rather than duplicated here.
+        if (static_cast<int>(code_.generators.size()) != code_.n - code_.k) {
+            diagnostics_.push_back({Diagnostic::Severity::Warning, start,
+                "code [[" + std::to_string(code_.n) + "," + std::to_string(code_.k) + "," +
+                    std::to_string(code_.d) + "]] implies " +
+                    std::to_string(code_.n - code_.k) + " generators, but " +
+                    std::to_string(code_.generators.size()) + " are listed"});
+        }
         return make("Code", "", {{"parameters", parameters}, {"generators", generators}}, start);
     }
 
@@ -379,6 +500,10 @@ private:
         std::string file;
         std::string cm;
         std::string cf;
+        std::string qp;
+        std::string qm;
+        std::string qf;
+        NodeId generators_node = 0;
         bool has_qf = false;
         bool has_flag_claim = false;
         while (!match("}")) {
@@ -396,6 +521,7 @@ private:
                 value = leaf("String", token.text, token.location);
             } else if (key.text == "g") {
                 value = parse_primary();
+                generators_node = value;
             } else if (key.text == "#-flag") {
                 const auto token = expect_kind(TokenKind::Number, "flag bound");
                 has_flag_claim = true;
@@ -404,7 +530,9 @@ private:
                 const auto token = expect_kind(TokenKind::Identifier, "register name");
                 if (key.text == "cm") cm = token.text;
                 if (key.text == "cf") cf = token.text;
-                if (key.text == "qf") has_qf = true;
+                if (key.text == "qp") qp = token.text;
+                if (key.text == "qm") qm = token.text;
+                if (key.text == "qf") { qf = token.text; has_qf = true; }
                 value = leaf("Identifier", token.text, token.location);
             }
             fields.push_back({key.text, value});
@@ -441,6 +569,13 @@ private:
         se_files_[name.text] = file;
         se_data_registers_[name.text] = cm;
         if (!cf.empty()) se_flag_registers_[name.text] = cf;
+        se_data_qubits_[name.text] = qp;
+        se_syndrome_qubits_[name.text] = qm;
+        if (!qf.empty()) se_flag_qubits_[name.text] = qf;
+        if (generators_node != 0) {
+            se_measures_[name.text] = read_pauli_matrix(generators_node, code_.n,
+                                                        "SE '" + name.text + "' g:");
+        }
         if (!signature_edges.empty()) {
             fields.push_back({"return_signature", make("TupleType", "", std::move(signature_edges), name.location)});
         }
@@ -1650,7 +1785,11 @@ private:
         if (targets.size() == 2) flag = stem + ".f";
         state.path.events.push_back({state.round, state.invocation, state.phase,
                                      se_name, qasm->second, data_register->second,
-                                     flag_register, syndrome, flag});
+                                     flag_register, syndrome, flag,
+                                     lookup_or_empty(se_data_qubits_, se_name),
+                                     lookup_or_empty(se_syndrome_qubits_, se_name),
+                                     lookup_optional(se_flag_qubits_, se_name),
+                                     lookup_measures(se_name)});
         if (!targets.empty()) state.values[syntax(targets[0]).value] = {syndrome, {}, {}, false};
         if (targets.size() == 2) state.values[syntax(targets[1]).value] = {*flag, {}, {}, false};
         return {std::move(state)};
@@ -1992,7 +2131,28 @@ private:
     std::vector<Diagnostic> diagnostics_;
     std::set<std::string> se_names_;
     std::unordered_map<std::string, std::size_t> se_arity_;
+    static std::string lookup_or_empty(
+        const std::unordered_map<std::string, std::string>& table, const std::string& key) {
+        const auto found = table.find(key);
+        return found == table.end() ? std::string() : found->second;
+    }
+    static std::optional<std::string> lookup_optional(
+        const std::unordered_map<std::string, std::string>& table, const std::string& key) {
+        const auto found = table.find(key);
+        if (found == table.end()) return std::nullopt;
+        return found->second;
+    }
+    std::vector<std::string> lookup_measures(const std::string& key) const {
+        const auto found = se_measures_.find(key);
+        return found == se_measures_.end() ? std::vector<std::string>() : found->second;
+    }
+
     std::unordered_map<std::string, std::string> se_files_;
+    std::unordered_map<std::string, std::string> se_data_qubits_;
+    std::unordered_map<std::string, std::string> se_syndrome_qubits_;
+    std::unordered_map<std::string, std::string> se_flag_qubits_;
+    std::unordered_map<std::string, std::vector<std::string>> se_measures_;
+    CodeSpec code_;
     std::unordered_map<std::string, std::string> se_data_registers_;
     std::unordered_map<std::string, std::string> se_flag_registers_;
     std::set<std::string> global_names_;
