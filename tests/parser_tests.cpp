@@ -99,6 +99,45 @@ int main(int argc, char** argv) {
                 }
             }
 
+            // Every constraint must arrive in a form a backend can evaluate.
+            // The failure this guards against is silent: an atom that was not
+            // recognised as a comparison degrades into Equals(whole text, "true"),
+            // which still renders correctly but cannot be resolved against a
+            // measurement outcome.
+            {
+                const auto check_condition = [&](const fpdl::Condition& condition,
+                                                 const auto& self) -> bool {
+                    switch (condition.kind) {
+                        case fpdl::Condition::Kind::Constant:
+                            return true;
+                        case fpdl::Condition::Kind::Equals:
+                            if (condition.lhs.empty()) return false;
+                            // The degenerate shape: an unparsed comparison
+                            // wrapped as "<text> == true".
+                            return !(condition.rhs == "true" &&
+                                     condition.lhs.find("==") != std::string::npos);
+                        case fpdl::Condition::Kind::And:
+                        case fpdl::Condition::Kind::Or:
+                            return condition.operands.size() == 2 &&
+                                   self(condition.operands[0], self) &&
+                                   self(condition.operands[1], self);
+                        case fpdl::Condition::Kind::Not:
+                            return condition.operands.size() == 1 &&
+                                   self(condition.operands[0], self);
+                    }
+                    return false;
+                };
+                for (const auto& path : result.paths) {
+                    for (const auto& constraint : path.constraints) {
+                        if (!check_condition(constraint.condition, check_condition)) {
+                            std::cerr << argv[i] << ": constraint '" << constraint.expression
+                                      << "' did not survive into an evaluable condition\n";
+                            return 1;
+                        }
+                    }
+                }
+            }
+
             if (std::string(argv[i]).find("CB18_[[17,1,5]]_plain") != std::string::npos) {
                 for (const auto& path : result.paths) {
                     for (const auto& constraint : path.constraints) {

@@ -32,6 +32,28 @@ private:
     SourceLocation location_;
 };
 
+// A constraint in evaluable form. `expression` next to it is the same thing
+// rendered for humans; consumers that have to *decide* whether a concrete
+// measurement outcome satisfies a branch should read this instead of parsing
+// the text back.
+//
+// Equality is the only relation the symbolic executor ever produces -- `!=`
+// becomes Not(Equals) -- so the leaves need nothing richer. `lhs` and `rhs`
+// are the symbolic terms as written, e.g. "id_1.s" and "0", where id_N refers
+// to the Nth SEEvent of the path (1-based) and .s / .f select the syndrome or
+// flag register it produced.
+struct Condition {
+    enum class Kind { Constant, Equals, And, Or, Not };
+
+    Kind kind = Kind::Constant;
+    bool constant = false;             // Kind::Constant
+    std::string lhs;                   // Kind::Equals
+    std::string rhs;                   // Kind::Equals
+    std::vector<Condition> operands;   // And/Or: two, Not: one
+
+    [[nodiscard]] static Condition always_true() { return Condition{Kind::Constant, true, {}, {}, {}}; }
+};
+
 struct SymbolicConstraint {
     std::string expression;
     bool expected = true;
@@ -39,6 +61,9 @@ struct SymbolicConstraint {
     std::size_t after_event = 0;
     std::size_t round = 0;
     std::string phase;
+    // Same predicate as `expression`, but structured. `expected` still applies:
+    // the path was taken when this evaluates to `expected`.
+    Condition condition;
 };
 
 // The `code:` block. A verifier backend needs all of this: the generators

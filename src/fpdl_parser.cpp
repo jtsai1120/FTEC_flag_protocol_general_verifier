@@ -995,6 +995,12 @@ private:
         Kind kind = Kind::Constant;
         bool constant = false;
         std::string atom;
+        // For an Atom that came from a comparison, the two sides before they
+        // were rendered into `atom`. Kept so consumers can evaluate the
+        // predicate instead of re-parsing the text. (`lhs`/`rhs` below are the
+        // operand pointers of And/Or/Not, which is a different thing.)
+        std::string atom_lhs;
+        std::string atom_rhs;
         std::shared_ptr<const LogicExpression> lhs;
         std::shared_ptr<const LogicExpression> rhs;
     };
@@ -1230,7 +1236,47 @@ private:
         return expression;
     }
 
+    // Atoms that reach us already rendered were written by logic_atom below in
+    // exactly the form "(lhs) == (rhs)", so recovering the two sides is a
+    // matter of finding the parenthesis that closes the first group rather
+    // than parsing an expression.
+    static bool split_rendered_equality(const std::string& text,
+                                        std::string& lhs, std::string& rhs) {
+        if (text.empty() || text.front() != '(') return false;
+        std::size_t depth = 0;
+        std::size_t close = std::string::npos;
+        for (std::size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == '(') ++depth;
+            else if (text[i] == ')' && --depth == 0) { close = i; break; }
+        }
+        if (close == std::string::npos) return false;
+
+        static const std::string separator = " == (";
+        if (text.compare(close + 1, separator.size(), separator) != 0) return false;
+        if (text.back() != ')') return false;
+
+        const std::size_t rhs_begin = close + 1 + separator.size();
+        if (rhs_begin > text.size() - 1) return false;
+        lhs = text.substr(1, close - 1);
+        rhs = text.substr(rhs_begin, text.size() - 1 - rhs_begin);
+        return true;
+    }
+
+    static Logic logic_atom(std::string value, std::string lhs, std::string rhs) {
+        auto expression = std::make_shared<LogicExpression>();
+        expression->kind = LogicExpression::Kind::Atom;
+        expression->atom = std::move(value);
+        expression->atom_lhs = std::move(lhs);
+        expression->atom_rhs = std::move(rhs);
+        return expression;
+    }
+
     static Logic logic_atom(std::string value) {
+        std::string lhs;
+        std::string rhs;
+        if (split_rendered_equality(value, lhs, rhs)) {
+            return logic_atom(std::move(value), std::move(lhs), std::move(rhs));
+        }
         auto expression = std::make_shared<LogicExpression>();
         expression->kind = LogicExpression::Kind::Atom;
         expression->atom = std::move(value);
@@ -1492,10 +1538,44 @@ private:
         if (node.kind == "Binary" && (node.value == "==" || node.value == "!=")) {
             const auto lhs = evaluate(required_edge(id, "lhs"), state);
             const auto rhs = evaluate(required_edge(id, "rhs"), state);
-            Logic equality = logic_atom("(" + lhs.text + ") == (" + rhs.text + ")");
+            Logic equality = logic_atom("(" + lhs.text + ") == (" + rhs.text + ")",
+                                        lhs.text, rhs.text);
             return node.value == "!=" ? logic_not(std::move(equality)) : equality;
         }
         return logic_atom(evaluated.text);
+    }
+
+    static Condition to_public_condition(const Logic& logic) {
+        Condition out;
+        if (!logic) return out;   // absent means "true"
+        switch (logic->kind) {
+            case LogicExpression::Kind::Constant:
+                out.kind = Condition::Kind::Constant;
+                out.constant = logic->constant;
+                break;
+            case LogicExpression::Kind::Atom:
+                // An atom with no recorded sides never came from a comparison;
+                // keep it as an opaque equality against its own text so the
+                // shape stays uniform.
+                out.kind = Condition::Kind::Equals;
+                out.lhs = logic->atom_lhs.empty() && logic->atom_rhs.empty() ? logic->atom
+                                                                             : logic->atom_lhs;
+                out.rhs = logic->atom_lhs.empty() && logic->atom_rhs.empty() ? std::string("true")
+                                                                             : logic->atom_rhs;
+                break;
+            case LogicExpression::Kind::And:
+            case LogicExpression::Kind::Or:
+                out.kind = logic->kind == LogicExpression::Kind::And ? Condition::Kind::And
+                                                                     : Condition::Kind::Or;
+                out.operands.push_back(to_public_condition(logic->lhs));
+                out.operands.push_back(to_public_condition(logic->rhs));
+                break;
+            case LogicExpression::Kind::Not:
+                out.kind = Condition::Kind::Not;
+                out.operands.push_back(to_public_condition(logic->lhs));
+                break;
+        }
+        return out;
     }
 
     bool constrain(ExecutionState& state, const SymbolicValue& condition,
@@ -1514,7 +1594,8 @@ private:
 
         state.path.constraints.push_back({condition.text, expected,
                                           state.path.events.size(),
-                                          state.round, state.phase});
+                                          state.round, state.phase,
+                                          to_public_condition(logic)});
         state.logic_constraints.push_back({std::move(logic), expected});
         return true;
     }
