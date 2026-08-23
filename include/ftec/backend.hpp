@@ -50,20 +50,23 @@ public:
     virtual void begin(const fpdl::CodeSpec& code, int tau) = 0;
 
     // The state before anything has run: no faults, empty record.
+    //
+    // A state is the whole family of fault counts at once, not one level of
+    // it. A circuit moves probability between levels -- a fault at a two-qubit
+    // gate takes the t-fault set into the t+1-fault one -- so a backend that
+    // could only be handed one level would have nowhere to put the result.
     [[nodiscard]] virtual StateId initial_state() = 0;
-
-    [[nodiscard]] virtual int fault_count(StateId) const = 0;
 
     // Run one SE and split on what it measured. Every returned state is
     // non-empty; an outcome that cannot occur is simply absent.
+    //
+    // Merging belongs here rather than to the driver. Reaching a point with
+    // the same record after t faults is one situation however the faults were
+    // distributed over the circuit, so a backend unions those within a state;
+    // but two *different* outcomes are different records and never merge,
+    // since later branches and the decoder both read them.
     [[nodiscard]] virtual std::vector<std::pair<Outcome, StateId>>
     step(StateId, const CircuitRef&) = 0;
-
-    // Two states the driver decided are indistinguishable. Merging is not
-    // optional: reaching the same node with the same record after t faults is
-    // one situation however the faults were distributed, and treating those
-    // separately would report failures that a decoder can in fact tell apart.
-    [[nodiscard]] virtual StateId merge(const std::vector<StateId>&) = 0;
 
     // Does this state contain two errors whose product is a logical operator?
     [[nodiscard]] virtual std::optional<Failure> check(StateId) = 0;

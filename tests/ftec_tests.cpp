@@ -19,66 +19,64 @@ void check(bool condition, const std::string& what) {
 }
 
 // ---------------------------------------------------------------------------
-// A backend that models nothing physical. Every SE reports every outcome its
-// registers can take, and no state ever fails.
+// A backend that models nothing physical, only the *shape* of one.
 //
-// Its purpose is to exercise the driver: if the trie walk, the guard routing
-// and the record bookkeeping are right, this reaches exactly the protocol's
-// terminals, once each, and runs each SE node once rather than once per path.
-// Being able to write it at all is also the check that ftec::Backend really is
-// an abstraction and not just the decision-diagram code behind a header.
+// A real backend returns the outcomes a circuit can actually produce, and that
+// set is small because the fault budget is small: with tau faults only so many
+// measurements can deviate from what a fault-free run would report. This one
+// mimics exactly that constraint and nothing else -- it starts from the
+// all-zero outcome and will report a deviating one only while fewer than tau
+// deviations have happened along the path.
+//
+// The budget is not decoration. Without it the mock claims every register
+// value at every step, which is 4^depth records for a protocol like CB18 and
+// says nothing about whether the driver is right; with it, the walk is bounded
+// the way a real one is, and both sides of every guard still get exercised.
 // ---------------------------------------------------------------------------
 class MockBackend : public ftec::Backend {
 public:
+    explicit MockBackend(int budget = -1) : budget_(budget) {}
+
     void begin(const fpdl::CodeSpec&, int tau) override {
-        tau_ = tau;
-        faults_.assign(1, 0);
+        tau_ = budget_ < 0 ? tau : budget_;
+        used_.assign(1, 0);
         steps_.clear();
-        merges_ = 0;
     }
 
     StateId initial_state() override { return 0; }
 
-    int fault_count(StateId id) const override { return faults_[id]; }
-
     std::vector<std::pair<ftec::Outcome, StateId>> step(StateId id,
                                                         const ftec::CircuitRef& circuit) override {
         steps_.push_back(circuit.se_name);
-
-        // Register widths are not known without reading the QASM, which this
-        // backend deliberately does not do; one syndrome bit and one flag bit
-        // is enough to make every branch in the examples reachable.
-        const std::size_t flag_bits = circuit.flag_bits ? 1 : 0;
+        const bool flagged = circuit.flag_bits.has_value();
 
         std::vector<std::pair<ftec::Outcome, StateId>> out;
-        for (int s = 0; s < 2; ++s) {
-            for (int f = 0; f < (flag_bits ? 2 : 1); ++f) {
-                ftec::Outcome outcome;
-                outcome.syndrome = {s != 0};
-                if (flag_bits) outcome.flag = {f != 0};
-                faults_.push_back(faults_[id]);
-                out.emplace_back(outcome, faults_.size() - 1);
-            }
+        const auto emit = [&](bool s, bool f, int cost) {
+            if (used_[id] + cost > tau_) return;
+            ftec::Outcome outcome;
+            outcome.syndrome = {s};
+            if (flagged) outcome.flag = {f};
+            used_.push_back(used_[id] + cost);
+            out.emplace_back(std::move(outcome), used_.size() - 1);
+        };
+        emit(false, false, 0);
+        emit(true, false, 1);
+        if (flagged) {
+            emit(false, true, 1);
+            emit(true, true, 1);
         }
         return out;
-    }
-
-    StateId merge(const std::vector<StateId>& states) override {
-        ++merges_;
-        faults_.push_back(faults_[states.front()]);
-        return faults_.size() - 1;
     }
 
     std::optional<ftec::Failure> check(StateId) override { return std::nullopt; }
 
     const std::vector<std::string>& steps() const { return steps_; }
-    std::size_t                     merges() const { return merges_; }
 
 private:
+    int                      budget_ = -1;
     int                      tau_ = 0;
-    std::vector<int>         faults_;
+    std::vector<int>         used_;
     std::vector<std::string> steps_;
-    std::size_t              merges_ = 0;
 };
 
 // A backend that fails on demand, to check the reporting and the early exit.
@@ -115,6 +113,21 @@ std::size_t count_kind(const ftec::Dag& dag, ftec::DagNode::Kind kind) {
 } // namespace
 
 int main(int argc, char** argv) {
+    // How many deviating measurements the mock will invent along a path.
+    //
+    // Two is the smallest that reaches every symbolic path of every protocol
+    // here, which is what the coverage checks below need. It is a search bound
+    // and not a fault model -- one physical fault can make several rounds
+    // report a non-zero syndrome, since the error it leaves behind persists --
+    // so it is chosen by measurement rather than derived: at one, four of
+    // Bha23's thirteen paths and most of CB18's are unreachable; at three,
+    // CB18 goes from 4852 records to 88444 and covers nothing new.
+    int kMockBudget = 2;
+    if (argc > 2 && std::string(argv[1]) == "--budget") {
+        kMockBudget = std::stoi(argv[2]);
+        argv += 2;
+        argc -= 2;
+    }
     if (argc < 2) {
         std::cerr << "usage: ftec_tests <protocol.fpdl>...\n";
         return 2;
@@ -157,15 +170,21 @@ int main(int argc, char** argv) {
         }
 
         // --- the walk reaches every path, running each SE once --------------
-        MockBackend mock;
+        MockBackend mock(kMockBudget);
         const auto  result = ftec::verify(dag, mock);
 
         check(result.paths_reached == dag.path_count,
-              "reached every path (" + std::to_string(result.paths_reached) + " of " +
+              "reached every symbolic path (" + std::to_string(result.paths_reached) + " of " +
                   std::to_string(dag.path_count) + ")");
-        check(result.se_applications == se_nodes,
-              "ran each SE node once (" + std::to_string(result.se_applications) + " of " +
-                  std::to_string(se_nodes) + ")");
+        check(result.records_reached >= result.paths_reached,
+              "records are at least as many as the paths they realise");
+        // A node is stepped once per distinct record that reaches it, not once
+        // outright: distinct records carry distinct states and cannot share a
+        // circuit run. What the trie saves is re-walking a shared *prefix* for
+        // every path that continues through it, so the count sits between the
+        // number of SE nodes and what enumerating paths would cost.
+        check(result.se_applications >= se_nodes,
+              "every SE node was stepped at least once");
         check(result.clean(), "a backend that never fails reports no failures");
         check(result.tau == dag.code.fault_budget(), "tau comes from the distance");
 
@@ -187,11 +206,10 @@ int main(int argc, char** argv) {
                 for (const auto child : dag.successors(node)) stack.emplace_back(child, next);
             }
         }
-        std::cout << "  paths " << dag.path_count << ", SE nodes " << se_nodes
-                  << ", enumeration would run " << enumerated << " circuits ("
-                  << (se_nodes ? static_cast<double>(enumerated) / static_cast<double>(se_nodes)
-                               : 0.0)
-                  << "x)\n";
+        std::cout << "  paths " << dag.path_count << " (" << result.records_reached
+                  << " records), SE nodes " << se_nodes << ", circuits run "
+                  << result.se_applications << "; enumerating the merged paths alone would "
+                  << "revisit " << enumerated << " SE nodes\n";
         check(enumerated >= se_nodes, "sharing never costs more than enumeration");
     }
 

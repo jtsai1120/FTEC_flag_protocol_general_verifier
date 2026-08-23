@@ -9,10 +9,11 @@ add_library(ftec_dd
     src/pauli_bdd.cpp
     src/qasm_propagate.cpp
     src/stabilizer.cpp
-    src/flow_check.cpp)
+    src/flow_check.cpp
+    src/dd_backend.cpp)
 
 target_include_directories(ftec_dd PUBLIC include)
-target_link_libraries(ftec_dd PUBLIC BuDDy::bdd)
+target_link_libraries(ftec_dd PUBLIC BuDDy::bdd ftec_core)
 target_compile_options(ftec_dd PRIVATE -Wall -Wextra)
 
 # The standalone driver this directory came with. Superseded by the top-level

@@ -37,9 +37,15 @@ struct VerifyOptions {
 struct VerifyResult {
     std::string protocol;
     int         tau              = 0;
-    std::size_t paths_reached    = 0;
-    std::size_t se_applications  = 0;   // circuits actually run
-    std::size_t states_explored  = 0;
+    // A symbolic path can be reached by many concrete measurement records:
+    // the guards partition outcomes coarsely ("s != 0" covers several), and
+    // every distinct record descends on its own because later branches and the
+    // decoder both read it. Both numbers matter, and conflating them hides
+    // whichever one is exploding.
+    std::size_t paths_reached     = 0;   // distinct symbolic paths
+    std::size_t records_reached   = 0;   // terminal visits, one per record
+    std::size_t se_applications   = 0;   // circuits actually run
+    std::size_t states_explored   = 0;
     int         min_fault_count  = -1;  // fewest faults that break the protocol
     std::vector<PathFailure> failures;
 

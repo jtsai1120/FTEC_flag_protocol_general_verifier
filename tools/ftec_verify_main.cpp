@@ -1,9 +1,11 @@
+#include "dd_backend.hpp"
 #include "ftec/dag.hpp"
 #include "ftec/verify.hpp"
 
 #include <filesystem>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -23,45 +25,68 @@ void usage(const char* argv0) {
         << "  mock   runs the traversal without modelling errors: every branch is\n"
         << "         taken and nothing ever fails. Useful for inspecting a protocol's\n"
         << "         structure, not for deciding whether it is fault tolerant.\n"
-        << "  dd     decision diagrams over Pauli sets. Not yet reachable from here:\n"
-        << "         it needs the QASM front end to handle the dialect these\n"
-        << "         protocols are written in (custom gates, reset, mid-circuit\n"
-        << "         measure, three qubit registers).\n";
+        << "  dd     decision diagrams over Pauli sets: propagates the error set\n"
+        << "         through each circuit, injects every two-qubit fault, and asks\n"
+        << "         whether any reachable set holds two errors whose product is a\n"
+        << "         logical operator.\n";
 }
 
-// The mock backend, as in the tests: every outcome, no failures. Kept here so
-// the tool is useful before a physical backend is wired up.
+// ---------------------------------------------------------------------------
+// A backend that models nothing physical, only the *shape* of one.
+//
+// A real backend returns the outcomes a circuit can actually produce, and that
+// set is small because the fault budget is small: with tau faults only so many
+// measurements can deviate from what a fault-free run would report. This one
+// mimics exactly that constraint and nothing else -- it starts from the
+// all-zero outcome and will report a deviating one only while fewer than tau
+// deviations have happened along the path.
+//
+// The budget is not decoration. Without it the mock claims every register
+// value at every step, which is 4^depth records for a protocol like CB18 and
+// says nothing about whether the driver is right; with it, the walk is bounded
+// the way a real one is, and both sides of every guard still get exercised.
+// ---------------------------------------------------------------------------
 class MockBackend : public ftec::Backend {
 public:
-    void begin(const fpdl::CodeSpec&, int) override { faults_.assign(1, 0); }
-    StateId initial_state() override { return 0; }
-    int fault_count(StateId id) const override { return faults_[id]; }
+    void begin(const fpdl::CodeSpec&, int tau) override {
+        tau_ = tau;
+        used_.assign(1, 0);
+        steps_.clear();
+    }
 
-    std::vector<std::pair<ftec::Outcome, StateId>> step(
-        StateId id, const ftec::CircuitRef& circuit) override {
+    StateId initial_state() override { return 0; }
+
+    std::vector<std::pair<ftec::Outcome, StateId>> step(StateId id,
+                                                        const ftec::CircuitRef& circuit) override {
+        steps_.push_back(circuit.se_name);
         const bool flagged = circuit.flag_bits.has_value();
+
         std::vector<std::pair<ftec::Outcome, StateId>> out;
-        for (int s = 0; s < 2; ++s) {
-            for (int f = 0; f < (flagged ? 2 : 1); ++f) {
-                ftec::Outcome outcome;
-                outcome.syndrome = {s != 0};
-                if (flagged) outcome.flag = {f != 0};
-                faults_.push_back(faults_[id]);
-                out.emplace_back(outcome, faults_.size() - 1);
-            }
+        const auto emit = [&](bool s, bool f, int cost) {
+            if (used_[id] + cost > tau_) return;
+            ftec::Outcome outcome;
+            outcome.syndrome = {s};
+            if (flagged) outcome.flag = {f};
+            used_.push_back(used_[id] + cost);
+            out.emplace_back(std::move(outcome), used_.size() - 1);
+        };
+        emit(false, false, 0);
+        emit(true, false, 1);
+        if (flagged) {
+            emit(false, true, 1);
+            emit(true, true, 1);
         }
         return out;
     }
 
-    StateId merge(const std::vector<StateId>& states) override {
-        faults_.push_back(faults_[states.front()]);
-        return faults_.size() - 1;
-    }
-
     std::optional<ftec::Failure> check(StateId) override { return std::nullopt; }
 
+    const std::vector<std::string>& steps() const { return steps_; }
+
 private:
-    std::vector<int> faults_;
+    int                      tau_ = 0;
+    std::vector<int>         used_;
+    std::vector<std::string> steps_;
 };
 
 // Symbolic expansion needs a finite transition bound, and a protocol that has
@@ -173,24 +198,18 @@ int main(int argc, char** argv) {
             return 0;
         }
 
+        ftec::BackendPtr backend;
         if (backend_name == "dd") {
-            std::cerr
-                << "error: the dd backend is not reachable from this tool yet.\n"
-                   "       Its QASM front end still expects a restricted dialect: two qubit\n"
-                   "       registers named qd/qm, no custom gate definitions, no reset and\n"
-                   "       no mid-circuit measure. These protocols use all four. Run\n"
-                   "       build/backends/dd/dd-propagate directly for circuits in that\n"
-                   "       dialect, or use --backend=mock to inspect the path structure.\n";
-            return 1;
-        }
-        if (backend_name != "mock") {
+            backend = ftec::make_dd_backend();
+        } else if (backend_name == "mock") {
+            backend = std::make_unique<MockBackend>();
+        } else {
             std::cerr << "error: unknown backend '" << backend_name << "'\n";
             usage(argv[0]);
             return 2;
         }
 
-        MockBackend backend;
-        const auto  result = ftec::verify(dag, backend, options);
+        const auto result = ftec::verify(dag, *backend, options);
 
         std::cout << "protocol        : " << result.protocol << "\n"
                   << "code            : [[" << dag.code.n << ',' << dag.code.k << ','
@@ -200,6 +219,7 @@ int main(int argc, char** argv) {
                   << "backend         : " << backend_name << "\n"
                   << "paths reached   : " << result.paths_reached << " of " << dag.path_count
                   << "\n"
+                  << "records reached : " << result.records_reached << "\n"
                   << "circuits run    : " << result.se_applications << "\n\n";
 
         if (result.clean()) {

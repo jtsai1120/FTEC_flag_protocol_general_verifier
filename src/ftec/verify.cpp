@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <set>
 #include <stdexcept>
 
 namespace ftec {
@@ -287,7 +288,8 @@ public:
         const DagNode& current = dag_.nodes[node];
 
         if (current.kind == DagNode::Kind::Terminal) {
-            ++result_.paths_reached;
+            ++result_.records_reached;
+            if (reached_.insert(current.path_id).second) ++result_.paths_reached;
             if (auto failure = backend_.check(state)) {
                 note_failure(current, record, *failure);
                 if (options_.stop_at_first_failure) return false;
@@ -304,30 +306,22 @@ public:
         ++result_.se_applications;
         auto outcomes = backend_.step(state, current.circuit);
 
-        // Outcomes that route to the same child are one situation as far as
-        // anything downstream is concerned only if their records agree, and
-        // they do not -- so each outcome descends on its own. States that do
-        // coincide are merged inside a child by the grouping below.
-        std::map<std::size_t, std::vector<Backend::StateId>> by_child;
-        std::map<std::size_t, Outcome>                       outcome_of;
-
+        // Each outcome descends on its own and nothing is merged across them.
+        // Two outcomes may well satisfy the same guard -- "s != 0 or f != 0"
+        // accepts three of the four -- but they are different measurement
+        // records: later guards read them, and so does the decoder, so they
+        // stay apart. Merging happens inside a state instead, between fault
+        // counts and between branches of a circuit whose measured bits agree.
         for (auto& [outcome, next_state] : outcomes) {
             record.push_back(RecordEntry{node, current.circuit.se_name, outcome});
             const auto child = route(node, record);
+            if (child) {
+                if (!visit(*child, next_state, record)) {
+                    record.pop_back();
+                    return false;
+                }
+            }
             record.pop_back();
-
-            if (!child) continue;   // no branch accepts this outcome: it cannot occur
-            by_child[*child].push_back(next_state);
-            outcome_of.emplace(*child, outcome);
-        }
-
-        for (auto& [child, states] : by_child) {
-            const Backend::StateId merged =
-                states.size() == 1 ? states.front() : backend_.merge(states);
-            record.push_back(RecordEntry{node, current.circuit.se_name, outcome_of.at(child)});
-            const bool keep_going = visit(child, merged, record);
-            record.pop_back();
-            if (!keep_going) return false;
         }
         return true;
     }
@@ -359,6 +353,7 @@ private:
             PathFailure{terminal.path_id, terminal.terminal_action, record, failure});
     }
 
+    std::set<std::size_t> reached_;
     const Dag&           dag_;
     Backend&             backend_;
     const VerifyOptions& options_;
