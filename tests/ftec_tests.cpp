@@ -8,112 +8,130 @@
 #include <string>
 #include <vector>
 
-namespace {
+namespace
+{
 
-int failures = 0;
+    int failures = 0;
 
-void check(bool condition, const std::string& what) {
-    if (condition) return;
-    std::cerr << "  FAILED: " << what << '\n';
-    ++failures;
-}
-
-// ---------------------------------------------------------------------------
-// A backend that models nothing physical, only the *shape* of one.
-//
-// A real backend returns the outcomes a circuit can actually produce, and that
-// set is small because the fault budget is small: with tau faults only so many
-// measurements can deviate from what a fault-free run would report. This one
-// mimics exactly that constraint and nothing else -- it starts from the
-// all-zero outcome and will report a deviating one only while fewer than tau
-// deviations have happened along the path.
-//
-// The budget is not decoration. Without it the mock claims every register
-// value at every step, which is 4^depth records for a protocol like CB18 and
-// says nothing about whether the driver is right; with it, the walk is bounded
-// the way a real one is, and both sides of every guard still get exercised.
-// ---------------------------------------------------------------------------
-class MockBackend : public ftec::Backend {
-public:
-    explicit MockBackend(int budget = -1) : budget_(budget) {}
-
-    void begin(const fpdl::CodeSpec&, int tau) override {
-        tau_ = budget_ < 0 ? tau : budget_;
-        used_.assign(1, 0);
-        steps_.clear();
+    void check(bool condition, const std::string &what)
+    {
+        if (condition)
+            return;
+        std::cerr << "  FAILED: " << what << '\n';
+        ++failures;
     }
 
-    StateId initial_state() override { return 0; }
+    // ---------------------------------------------------------------------------
+    // A backend that models nothing physical, only the *shape* of one.
+    //
+    // A real backend returns the outcomes a circuit can actually produce, and that
+    // set is small because the fault budget is small: with tau faults only so many
+    // measurements can deviate from what a fault-free run would report. This one
+    // mimics exactly that constraint and nothing else -- it starts from the
+    // all-zero outcome and will report a deviating one only while fewer than tau
+    // deviations have happened along the path.
+    //
+    // The budget is not decoration. Without it the mock claims every register
+    // value at every step, which is 4^depth records for a protocol like CB18 and
+    // says nothing about whether the driver is right; with it, the walk is bounded
+    // the way a real one is, and both sides of every guard still get exercised.
+    // ---------------------------------------------------------------------------
+    class MockBackend : public ftec::Backend
+    {
+    public:
+        explicit MockBackend(int budget = -1) : budget_(budget) {}
 
-    std::vector<std::pair<ftec::Outcome, StateId>> step(StateId id,
-                                                        const ftec::CircuitRef& circuit) override {
-        steps_.push_back(circuit.se_name);
-        const bool flagged = circuit.flag_qubits.has_value();
-
-        std::vector<std::pair<ftec::Outcome, StateId>> out;
-        const auto emit = [&](bool s, bool f, int cost) {
-            if (used_[id] + cost > tau_) return;
-            ftec::Outcome outcome;
-            outcome.syndrome = {s};
-            if (flagged) outcome.flag = {f};
-            used_.push_back(used_[id] + cost);
-            out.emplace_back(std::move(outcome), used_.size() - 1);
-        };
-        emit(false, false, 0);
-        emit(true, false, 1);
-        if (flagged) {
-            emit(false, true, 1);
-            emit(true, true, 1);
+        void begin(const fpdl::CodeSpec &, int tau) override
+        {
+            tau_ = budget_ < 0 ? tau : budget_;
+            used_.assign(1, 0);
+            steps_.clear();
         }
-        return out;
+
+        StateId initial_state() override { return 0; }
+
+        std::vector<std::pair<ftec::Outcome, StateId>> step(StateId id,
+                                                            const ftec::CircuitRef &circuit) override
+        {
+            steps_.push_back(circuit.se_name);
+            const bool flagged = circuit.flag_qubits.has_value();
+
+            std::vector<std::pair<ftec::Outcome, StateId>> out;
+            const auto emit = [&](bool s, bool f, int cost)
+            {
+                if (used_[id] + cost > tau_)
+                    return;
+                ftec::Outcome outcome;
+                outcome.syndrome = {s};
+                if (flagged)
+                    outcome.flag = {f};
+                used_.push_back(used_[id] + cost);
+                out.emplace_back(std::move(outcome), used_.size() - 1);
+            };
+            emit(false, false, 0);
+            emit(true, false, 1);
+            if (flagged)
+            {
+                emit(false, true, 1);
+                emit(true, true, 1);
+            }
+            return out;
+        }
+
+        std::optional<ftec::Failure> check(StateId) override { return std::nullopt; }
+
+        const std::vector<std::string> &steps() const { return steps_; }
+
+    private:
+        int budget_ = -1;
+        int tau_ = 0;
+        std::vector<int> used_;
+        std::vector<std::string> steps_;
+    };
+
+    // A backend that fails on demand, to check the reporting and the early exit.
+    class FailingBackend : public MockBackend
+    {
+    public:
+        FailingBackend(std::size_t fail_after, int budget)
+            : MockBackend(budget), fail_after_(fail_after) {}
+
+        std::optional<ftec::Failure> check(StateId) override
+        {
+            if (terminals_++ < fail_after_)
+                return std::nullopt;
+            return ftec::Failure{1, "synthetic"};
+        }
+
+    private:
+        std::size_t fail_after_ = 0;
+        std::size_t terminals_ = 0;
+    };
+
+    ftec::Dag load(const std::filesystem::path &fpdl, std::size_t bound = 200)
+    {
+        fpdl::ParseOptions options;
+        options.bmc_bound = bound;
+        options.max_paths = 5000;
+        const auto parsed = fpdl::Parser::parse_file(fpdl, options);
+        return ftec::build_dag(parsed, fpdl.parent_path());
     }
 
-    std::optional<ftec::Failure> check(StateId) override { return std::nullopt; }
-
-    const std::vector<std::string>& steps() const { return steps_; }
-
-private:
-    int                      budget_ = -1;
-    int                      tau_ = 0;
-    std::vector<int>         used_;
-    std::vector<std::string> steps_;
-};
-
-// A backend that fails on demand, to check the reporting and the early exit.
-class FailingBackend : public MockBackend {
-public:
-    FailingBackend(std::size_t fail_after, int budget)
-        : MockBackend(budget), fail_after_(fail_after) {}
-
-    std::optional<ftec::Failure> check(StateId) override {
-        if (terminals_++ < fail_after_) return std::nullopt;
-        return ftec::Failure{1, "synthetic"};
+    std::size_t count_kind(const ftec::Dag &dag, ftec::DagNode::Kind kind)
+    {
+        std::size_t n = 0;
+        for (const auto &node : dag.nodes)
+        {
+            if (node.kind == kind)
+                ++n;
+        }
+        return n;
     }
-
-private:
-    std::size_t fail_after_ = 0;
-    std::size_t terminals_  = 0;
-};
-
-ftec::Dag load(const std::filesystem::path& fpdl, std::size_t bound = 200) {
-    fpdl::ParseOptions options;
-    options.bmc_bound = bound;
-    options.max_paths = 5000;
-    const auto parsed = fpdl::Parser::parse_file(fpdl, options);
-    return ftec::build_dag(parsed, fpdl.parent_path());
-}
-
-std::size_t count_kind(const ftec::Dag& dag, ftec::DagNode::Kind kind) {
-    std::size_t n = 0;
-    for (const auto& node : dag.nodes) {
-        if (node.kind == kind) ++n;
-    }
-    return n;
-}
 
 } // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv)
+{
     // How many deviating measurements the mock will invent along a path.
     //
     // This is a search bound, not a fault model: one physical fault can make
@@ -125,19 +143,22 @@ int main(int argc, char** argv) {
     // CB18 goes from 4852 records to 88444 at three and covers nothing new. So
     // each protocol gets the smallest bound that works for it, found here
     // rather than written down and left to rot when a protocol is added.
-    int kMockBudget = 0;   // 0 = search for it
-    if (argc > 2 && std::string(argv[1]) == "--budget") {
+    int kMockBudget = 0; // 0 = search for it
+    if (argc > 2 && std::string(argv[1]) == "--budget")
+    {
         kMockBudget = std::stoi(argv[2]);
         argv += 2;
         argc -= 2;
     }
-    constexpr int kMaxBudget = 4;
-    if (argc < 2) {
+    constexpr int kMaxBudget = 5;
+    if (argc < 2)
+    {
         std::cerr << "usage: ftec_tests <protocol.fpdl>...\n";
         return 2;
     }
 
-    for (int i = 1; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i)
+    {
         const std::filesystem::path source = argv[i];
         std::cout << source.filename().string() << '\n';
 
@@ -149,21 +170,25 @@ int main(int argc, char** argv) {
         // rather than assuming: a builder bug that re-attached a node would
         // quietly turn the walk into path enumeration.
         std::map<std::size_t, std::size_t> in_degree;
-        for (const auto& edge : dag.edges) ++in_degree[edge.to];
+        for (const auto &edge : dag.edges)
+            ++in_degree[edge.to];
         check(dag.edges.size() == dag.nodes.size() - 1,
               "edges == nodes - 1 (a tree)");
-        for (const auto& [node, degree] : in_degree) {
+        for (const auto &[node, degree] : in_degree)
+        {
             check(degree == 1, "node " + std::to_string(node) + " has one parent");
         }
         check(in_degree.count(dag.root()) == 0, "the root has no parent");
 
         const auto terminals = count_kind(dag, ftec::DagNode::Kind::Terminal);
-        const auto se_nodes  = count_kind(dag, ftec::DagNode::Kind::Se);
+        const auto se_nodes = count_kind(dag, ftec::DagNode::Kind::Se);
         check(terminals == dag.path_count, "one terminal per path");
 
         // Every SE node must carry enough to actually run something.
-        for (const auto& node : dag.nodes) {
-            if (node.kind != ftec::DagNode::Kind::Se) continue;
+        for (const auto &node : dag.nodes)
+        {
+            if (node.kind != ftec::DagNode::Kind::Se)
+                continue;
             check(!node.circuit.se_name.empty(), "SE node names its circuit");
             check(std::filesystem::exists(node.circuit.qasm),
                   "QASM resolves: " + node.circuit.qasm.string());
@@ -172,11 +197,12 @@ int main(int argc, char** argv) {
         }
 
         // --- the walk reaches every path, running each SE once --------------
-        int         budget = kMockBudget ? kMockBudget : 1;
+        int budget = kMockBudget ? kMockBudget : 1;
         MockBackend mock(budget);
-        auto        result = ftec::verify(dag, mock);
+        auto result = ftec::verify(dag, mock);
         while (kMockBudget == 0 && result.paths_reached < dag.path_count &&
-               budget < kMaxBudget) {
+               budget < kMaxBudget)
+        {
             ++budget;
             MockBackend wider(budget);
             result = ftec::verify(dag, wider);
@@ -202,17 +228,20 @@ int main(int argc, char** argv) {
         std::size_t enumerated = 0;
         {
             std::vector<std::pair<std::size_t, std::size_t>> stack{{dag.root(), 0}};
-            while (!stack.empty()) {
+            while (!stack.empty())
+            {
                 const auto [node, depth] = stack.back();
                 stack.pop_back();
-                const auto& current = dag.nodes[node];
-                if (current.kind == ftec::DagNode::Kind::Terminal) {
+                const auto &current = dag.nodes[node];
+                if (current.kind == ftec::DagNode::Kind::Terminal)
+                {
                     enumerated += depth;
                     continue;
                 }
                 const std::size_t next =
                     depth + (current.kind == ftec::DagNode::Kind::Se ? 1 : 0);
-                for (const auto child : dag.successors(node)) stack.emplace_back(child, next);
+                for (const auto child : dag.successors(node))
+                    stack.emplace_back(child, next);
             }
         }
         std::cout << "  paths " << dag.path_count << " (" << result.records_reached
@@ -227,16 +256,17 @@ int main(int argc, char** argv) {
         // terminal *visit*, which is one per record and not one per path: a
         // symbolic path is reached by as many records as satisfy its guards.
         FailingBackend always_fails(0, budget);
-        const auto     all = ftec::verify(dag, always_fails);
+        const auto all = ftec::verify(dag, always_fails);
         check(!all.clean(), "failures are reported");
         check(all.failures.size() == all.records_reached, "every record reported once");
         check(all.paths_reached == dag.path_count, "failures cover every path");
         check(all.min_fault_count == 1, "min_fault_count comes from the failures");
-        for (const auto& failure : all.failures) {
+        for (const auto &failure : all.failures)
+        {
             check(!failure.record.empty(), "a failure carries the record that reached it");
         }
 
-        FailingBackend      stops(0, budget);
+        FailingBackend stops(0, budget);
         ftec::VerifyOptions options;
         options.stop_at_first_failure = true;
         const auto early = ftec::verify(dag, stops, options);
@@ -246,7 +276,8 @@ int main(int argc, char** argv) {
         check(early.records_reached <= all.records_reached, "early exit did no more work");
     }
 
-    if (failures != 0) {
+    if (failures != 0)
+    {
         std::cerr << failures << " check(s) failed\n";
         return 1;
     }
