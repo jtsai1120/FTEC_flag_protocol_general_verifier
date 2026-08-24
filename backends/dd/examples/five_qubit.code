@@ -1,0 +1,6 @@
+# The [[5,1,3]] perfect code: 4 generators over 5 data qubits.
+# One Pauli string per line; blank lines and #/// comments are ignored.
+XZZXI
+IXZZX
+XIXZZ
+ZXIXZ

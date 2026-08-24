@@ -45,6 +45,94 @@ int main(int argc, char** argv) {
                 std::cerr << argv[i] << ": invalid symbolic-path JSON\n";
                 return 1;
             }
+            // The code: block feeds a verifier backend directly, so every
+            // example must yield a usable one: sane [[n,k,d]], generators that
+            // are n qubits wide however they were written (dense letters or
+            // indexed Z1/X12 form), and a fault budget of floor((d-1)/2).
+            const auto& code = result.code;
+            if (code.n <= 0 || code.k <= 0 || code.d <= 0 || code.k >= code.n) {
+                std::cerr << argv[i] << ": implausible code parameters [["
+                          << code.n << ',' << code.k << ',' << code.d << "]]\n";
+                return 1;
+            }
+            if (code.fault_budget() != (code.d - 1) / 2) {
+                std::cerr << argv[i] << ": fault budget disagrees with the distance\n";
+                return 1;
+            }
+            if (code.generators.empty()) {
+                std::cerr << argv[i] << ": code block produced no generators\n";
+                return 1;
+            }
+            for (const auto& generator : code.generators) {
+                if (static_cast<int>(generator.size()) != code.n) {
+                    std::cerr << argv[i] << ": generator '" << generator << "' is "
+                              << generator.size() << " wide, expected " << code.n << '\n';
+                    return 1;
+                }
+                if (generator.find_first_not_of("IXYZ") != std::string::npos) {
+                    std::cerr << argv[i] << ": generator '" << generator
+                              << "' has a non-Pauli character\n";
+                    return 1;
+                }
+            }
+            // Every SE must name the quantum registers a backend needs, and a
+            // flagged SE must expose both the flag qubits and the flag bits.
+            for (const auto& path : result.paths) {
+                for (const auto& event : path.events) {
+                    if (event.data_qubits.empty() || event.syndrome_qubits.empty()) {
+                        std::cerr << argv[i] << ": SE '" << event.se_name
+                                  << "' does not name its qd/qm registers\n";
+                        return 1;
+                    }
+                    for (const auto& measured : event.measures) {
+                        if (static_cast<int>(measured.size()) != code.n) {
+                            std::cerr << argv[i] << ": SE '" << event.se_name
+                                      << "' measures a generator of the wrong width\n";
+                            return 1;
+                        }
+                    }
+                }
+            }
+
+            // Every constraint must arrive in a form a backend can evaluate.
+            // The failure this guards against is silent: an atom that was not
+            // recognised as a comparison degrades into Equals(whole text, "true"),
+            // which still renders correctly but cannot be resolved against a
+            // measurement outcome.
+            {
+                const auto check_condition = [&](const fpdl::Condition& condition,
+                                                 const auto& self) -> bool {
+                    switch (condition.kind) {
+                        case fpdl::Condition::Kind::Constant:
+                            return true;
+                        case fpdl::Condition::Kind::Equals:
+                            if (condition.lhs.empty()) return false;
+                            // The degenerate shape: an unparsed comparison
+                            // wrapped as "<text> == true".
+                            return !(condition.rhs == "true" &&
+                                     condition.lhs.find("==") != std::string::npos);
+                        case fpdl::Condition::Kind::And:
+                        case fpdl::Condition::Kind::Or:
+                            return condition.operands.size() == 2 &&
+                                   self(condition.operands[0], self) &&
+                                   self(condition.operands[1], self);
+                        case fpdl::Condition::Kind::Not:
+                            return condition.operands.size() == 1 &&
+                                   self(condition.operands[0], self);
+                    }
+                    return false;
+                };
+                for (const auto& path : result.paths) {
+                    for (const auto& constraint : path.constraints) {
+                        if (!check_condition(constraint.condition, check_condition)) {
+                            std::cerr << argv[i] << ": constraint '" << constraint.expression
+                                      << "' did not survive into an evaluable condition\n";
+                            return 1;
+                        }
+                    }
+                }
+            }
+
             if (std::string(argv[i]).find("CB18_[[17,1,5]]_plain") != std::string::npos) {
                 for (const auto& path : result.paths) {
                     for (const auto& constraint : path.constraints) {
@@ -75,7 +163,7 @@ int main(int argc, char** argv) {
 
     const std::string prefix =
         "protocol bad: code: [[1,1,1]] [[I]] se: "
-        "g { file: \"x.qasm\" qp: q qm: q cm: c g: [[I]] } ";
+        "g { file: \"x.qasm\" qd: q qm: q g: [[I]] } ";
     if (!rejects(prefix +
                  "gvar: bit s = 0; tc: 1: true "
                  "af: while(!tc) { (s) = g(); } tp: 1: { end(); }")) {
@@ -100,9 +188,9 @@ int main(int argc, char** argv) {
     symbolic_options.bmc_bound = 40;
     const auto symbolic = fpdl::Parser::parse_string(
         "protocol branching: code: [[1,1,1]] [[I]] se: "
-        "first { file: \"first.qasm\" qp: q qm: q cm: m qf: qf cf: f g: [[I]] #-flag: 1 } "
-        "left { file: \"left.qasm\" qp: q qm: q cm: m g: [[I]] } "
-        "right { file: \"right.qasm\" qp: q qm: q cm: m g: [[I]] } "
+        "first { file: \"first.qasm\" qd: q qm: q qf: qf g: [[I]] #-flag: 1 } "
+        "left { file: \"left.qasm\" qd: q qm: q g: [[I]] } "
+        "right { file: \"right.qasm\" qd: q qm: q g: [[I]] } "
         "gvar: cnt n = 0; bit s = 0; bit f = 0; bit x = 0; "
         "tc: 1: n == 2 "
         "af: while(!tc) { "
@@ -135,10 +223,12 @@ int main(int argc, char** argv) {
                 std::cerr << "SE result did not use sequential id_N symbolic names\n";
                 return 1;
             }
-            if (event.data_register != "m" ||
-                (event.se_name == "first" && event.flag_register != "f") ||
-                (event.se_name != "first" && event.flag_register)) {
-                std::cerr << "SE event did not retain its QASM output registers\n";
+            // Only the quantum registers are declared now; a classical one is
+            // read off the circuit's measure statements instead.
+            if (event.data_qubits != "q" || event.syndrome_qubits != "q" ||
+                (event.se_name == "first" && event.flag_qubits != "qf") ||
+                (event.se_name != "first" && event.flag_qubits)) {
+                std::cerr << "SE event did not retain its QASM quantum registers\n";
                 return 1;
             }
         }
@@ -149,10 +239,6 @@ int main(int argc, char** argv) {
         symbolic_json.find("\"qasm_file\": \"left.qasm\"") ==
             std::string::npos ||
         symbolic_json.find("\"qasm_file\": \"right.qasm\"") ==
-            std::string::npos ||
-        symbolic_json.find("\"data_register\": \"m\"") ==
-            std::string::npos ||
-        symbolic_json.find("\"flag_register\": \"f\"") ==
             std::string::npos) {
         std::cerr << "symbolic-path JSON did not contain ordered QASM output\n";
         return 1;
@@ -160,8 +246,8 @@ int main(int argc, char** argv) {
 
     const auto continue_control = fpdl::Parser::parse_string(
         "protocol continue_control: code: [[1,1,1]] [[I]] se: "
-        "flagged { file: \"flagged.qasm\" qp: q qm: q cm: m qf: qf cf: f g: [[I]] #-flag: 1 } "
-        "plain { file: \"plain.qasm\" qp: q qm: q cm: m g: [[I]] } "
+        "flagged { file: \"flagged.qasm\" qd: q qm: q qf: qf g: [[I]] #-flag: 1 } "
+        "plain { file: \"plain.qasm\" qd: q qm: q g: [[I]] } "
         "gvar: cnt n = 0; bit s = ⊥; bit f = ⊥; bit other = ⊥; "
         "tc: 1: n == 2 "
         "af: while(!tc) { "
@@ -192,8 +278,8 @@ int main(int argc, char** argv) {
 
     const auto compound = fpdl::Parser::parse_string(
         "protocol compound: code: [[1,1,1]] [[I]] se: "
-        "flagged { file: \"flagged.qasm\" qp: q qm: q cm: m qf: qf cf: f g: [[I]] #-flag: 1 } "
-        "plain { file: \"plain.qasm\" qp: q qm: q cm: m g: [[I]] } "
+        "flagged { file: \"flagged.qasm\" qd: q qm: q qf: qf g: [[I]] #-flag: 1 } "
+        "plain { file: \"plain.qasm\" qd: q qm: q g: [[I]] } "
         "gvar: bit s = ⊥; bit f = ⊥; bit other = ⊥; "
         "tc: 1: (s == 0) and (f == 0) "
         "af: while(!tc) { "

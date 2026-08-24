@@ -1,3 +1,8 @@
 /build/
 *.paths.json
 *.dag.json
+
+# Scratch QASM the decision-diagram tests write beside themselves; normally
+# cleaned up, but they survive a failed run. Also catches AppleDouble files.
+._*
+.DS_Store
