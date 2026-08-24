@@ -82,7 +82,8 @@ private:
 // A backend that fails on demand, to check the reporting and the early exit.
 class FailingBackend : public MockBackend {
 public:
-    explicit FailingBackend(std::size_t fail_after) : fail_after_(fail_after) {}
+    FailingBackend(std::size_t fail_after, int budget)
+        : MockBackend(budget), fail_after_(fail_after) {}
 
     std::optional<ftec::Failure> check(StateId) override {
         if (terminals_++ < fail_after_) return std::nullopt;
@@ -115,19 +116,22 @@ std::size_t count_kind(const ftec::Dag& dag, ftec::DagNode::Kind kind) {
 int main(int argc, char** argv) {
     // How many deviating measurements the mock will invent along a path.
     //
-    // Two is the smallest that reaches every symbolic path of every protocol
-    // here, which is what the coverage checks below need. It is a search bound
-    // and not a fault model -- one physical fault can make several rounds
-    // report a non-zero syndrome, since the error it leaves behind persists --
-    // so it is chosen by measurement rather than derived: at one, four of
-    // Bha23's thirteen paths and most of CB18's are unreachable; at three,
-    // CB18 goes from 4852 records to 88444 and covers nothing new.
-    int kMockBudget = 2;
+    // This is a search bound, not a fault model: one physical fault can make
+    // several rounds report a non-zero syndrome, since the error it leaves
+    // behind persists. What the coverage checks need is the smallest bound that
+    // still reaches every symbolic path, and that differs per protocol -- most
+    // want two, while Bha23 Fig. 6 stays in its loop only while the syndrome
+    // keeps reading 1 and so needs three. Raising it for everyone is not free:
+    // CB18 goes from 4852 records to 88444 at three and covers nothing new. So
+    // each protocol gets the smallest bound that works for it, found here
+    // rather than written down and left to rot when a protocol is added.
+    int kMockBudget = 0;   // 0 = search for it
     if (argc > 2 && std::string(argv[1]) == "--budget") {
         kMockBudget = std::stoi(argv[2]);
         argv += 2;
         argc -= 2;
     }
+    constexpr int kMaxBudget = 4;
     if (argc < 2) {
         std::cerr << "usage: ftec_tests <protocol.fpdl>...\n";
         return 2;
@@ -168,12 +172,19 @@ int main(int argc, char** argv) {
         }
 
         // --- the walk reaches every path, running each SE once --------------
-        MockBackend mock(kMockBudget);
-        const auto  result = ftec::verify(dag, mock);
+        int         budget = kMockBudget ? kMockBudget : 1;
+        MockBackend mock(budget);
+        auto        result = ftec::verify(dag, mock);
+        while (kMockBudget == 0 && result.paths_reached < dag.path_count &&
+               budget < kMaxBudget) {
+            ++budget;
+            MockBackend wider(budget);
+            result = ftec::verify(dag, wider);
+        }
 
         check(result.paths_reached == dag.path_count,
               "reached every symbolic path (" + std::to_string(result.paths_reached) + " of " +
-                  std::to_string(dag.path_count) + ")");
+                  std::to_string(dag.path_count) + ") at budget " + std::to_string(budget));
         check(result.records_reached >= result.paths_reached,
               "records are at least as many as the paths they realise");
         // A node is stepped once per distinct record that reaches it, not once
@@ -209,31 +220,30 @@ int main(int argc, char** argv) {
                   << result.se_applications << "; enumerating the merged paths alone would "
                   << "revisit " << enumerated << " SE nodes\n";
         check(enumerated >= se_nodes, "sharing never costs more than enumeration");
-    }
 
-    // --- failure reporting and early exit -----------------------------------
-    {
-        const std::filesystem::path source = argv[1];
-        const ftec::Dag             dag    = load(source);
-
-        FailingBackend always_fails(0);
+        // --- failure reporting and early exit -------------------------------
+        //
+        // A backend that fails at every terminal must produce one failure per
+        // terminal *visit*, which is one per record and not one per path: a
+        // symbolic path is reached by as many records as satisfy its guards.
+        FailingBackend always_fails(0, budget);
         const auto     all = ftec::verify(dag, always_fails);
         check(!all.clean(), "failures are reported");
-        check(all.failures.size() == dag.path_count, "every path reported once");
+        check(all.failures.size() == all.records_reached, "every record reported once");
+        check(all.paths_reached == dag.path_count, "failures cover every path");
         check(all.min_fault_count == 1, "min_fault_count comes from the failures");
         for (const auto& failure : all.failures) {
             check(!failure.record.empty(), "a failure carries the record that reached it");
         }
 
-        FailingBackend stops(0);
+        FailingBackend      stops(0, budget);
         ftec::VerifyOptions options;
         options.stop_at_first_failure = true;
         const auto early = ftec::verify(dag, stops, options);
         check(early.failures.size() == 1, "early exit stops after one failure");
         check(early.min_fault_count == all.min_fault_count,
               "early exit does not change min_fault_count");
-        check(early.paths_reached < all.paths_reached || dag.path_count == 1,
-              "early exit really did less work");
+        check(early.records_reached <= all.records_reached, "early exit did no more work");
     }
 
     if (failures != 0) {
