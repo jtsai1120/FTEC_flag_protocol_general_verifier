@@ -209,7 +209,10 @@ private:
             }
         }
 
-        static constexpr std::string_view valid = ":;{}[](),.+-<>!=";
+        // '^' carries no operator meaning here -- it shows up only inside
+        // protocol names like "..._[1,1,1,1]^T" (transpose, by convention),
+        // so it is accepted as an ordinary one-character symbol.
+        static constexpr std::string_view valid = ":;{}[](),.+-<>!=^";
         const char ch = advance();
         if (valid.find(ch) == std::string_view::npos) {
             throw ParseError(start, std::string("unexpected character '") + ch + "'");
