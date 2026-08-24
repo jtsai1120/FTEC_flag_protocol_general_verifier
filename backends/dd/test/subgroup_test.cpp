@@ -14,13 +14,23 @@ namespace {
 // Reference implementation of "multiply by every Pauli supported on {a,b}",
 // written the naive way the fast path deliberately avoids: build all 16
 // two-qubit Paulis explicitly, multiply each onto the whole set, union the
-// results. Multiplying by a single-qubit Pauli p reduces to the already
-// tested apply_X / apply_Z, since those *are* per-bit composition.
+// results.
+//
+// Multiplying by a Pauli is a *translation* of the set -- flip the bits that
+// Pauli owns -- and is written out here rather than borrowed from apply_X /
+// apply_Z. Those are gates, and a gate conjugates: X P X^ = +-P leaves this
+// representation alone. Group multiplication and conjugation are different
+// operations that happen to look alike, and a reference implementation should
+// not lean on the other one to tell them apart.
+PauliSetBDD flip_bit(const PauliSetBDD &s, int var) {
+    return PauliSetBDD(bdd_compose(s.raw(), bdd_nithvar(var), var));
+}
+
 PauliSetBDD multiply_one_qubit(const PauliSetBDD &s, int q, Pauli p) {
     const uint8_t v = static_cast<uint8_t>(p);
     PauliSetBDD out = s;
-    if (v & 0x1) out = out.apply_X(q);
-    if (v & 0x2) out = out.apply_Z(q);
+    if (v & 0x1) out = flip_bit(out, PauliSetBDD::xvar(q));
+    if (v & 0x2) out = flip_bit(out, PauliSetBDD::zvar(q));
     return out;
 }
 
