@@ -30,7 +30,10 @@ if(BUILD_TESTING)
                stabilizer_test flow_check_test)
         add_executable(dd_${_t} test/${_t}.cpp)
         target_link_libraries(dd_${_t} PRIVATE ftec_dd)
-        target_compile_options(dd_${_t} PRIVATE -Wall -Wextra)
+        # -UNDEBUG is not optional here. These tests check everything through
+        # bare assert(), which a Release build defines away -- and a suite that
+        # reports success while checking nothing is worse than no suite at all.
+        target_compile_options(dd_${_t} PRIVATE -Wall -Wextra -UNDEBUG)
         # qasm_test and flow_check_test write scratch .qasm files beside the
         # working directory, so give them one of their own.
         add_test(NAME dd.${_t}
