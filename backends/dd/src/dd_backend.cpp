@@ -71,6 +71,7 @@ public:
 
         const QasmProgram& program = program_for(circuit);
         const Layout       layout  = layout_for(program, circuit);
+        const Records&     records = records_for(circuit, program);
         grow_to(layout.total);
 
         // One branch per distinct classical outcome so far. Branches whose
@@ -122,10 +123,8 @@ public:
             if (all_empty(cleaned)) continue;
 
             Outcome outcome;
-            outcome.syndrome = read_register(branch.bits, circuit.syndrome_bits, circuit);
-            if (circuit.flag_bits) {
-                outcome.flag = read_register(branch.bits, *circuit.flag_bits, circuit);
-            }
+            outcome.syndrome = read_register(branch.bits, records.syndrome, circuit);
+            if (records.flag) outcome.flag = read_register(branch.bits, *records.flag, circuit);
             states_.push_back(std::move(cleaned));
             out.emplace_back(std::move(outcome), states_.size() - 1);
         }
@@ -266,7 +265,7 @@ private:
         };
 
         Layout layout;
-        const int data = width(circuit.data_qubits, "qp");
+        const int data = width(circuit.data_qubits, "qd");
         if (data != data_qubits_) {
             throw std::runtime_error("dd backend: " + circuit.qasm.string() + " declares " +
                                      std::to_string(data) + " data qubits but the code has " +
@@ -293,7 +292,7 @@ private:
         if (found == layout.base.end()) {
             throw std::runtime_error("dd backend: register '" + ref.reg +
                                      "' has no role in this circuit; the protocol names only "
-                                     "qp, qm and qf");
+                                     "qd, qm and qf");
         }
         return found->second + static_cast<int>(ref.index);
     }
@@ -405,6 +404,58 @@ private:
         return key;
     }
 
+    // Which classical register each role's outcome lands in. The protocol does
+    // not say -- and does not need to: a measurement statement already binds a
+    // classical register to the qubit it reads, so naming the syndrome and flag
+    // ancillas fixes the answer. Deriving it also rules out the failure a
+    // declaration invites, where the name given and the name the circuit
+    // actually writes to disagree and the syndrome is silently read off the
+    // flag register.
+    struct Records {
+        std::string                syndrome;
+        std::optional<std::string> flag;
+    };
+
+    const Records& records_for(const CircuitRef& circuit, const QasmProgram& program) {
+        const std::string key = circuit.qasm.string();
+        if (const auto found = records_.find(key); found != records_.end()) return found->second;
+
+        const auto target_of = [&](const std::string& qubits, const char* role) {
+            std::optional<std::string> found;
+            for (const auto& instruction : program.instructions) {
+                if (instruction.kind != QasmInstruction::Kind::Measure) continue;
+                if (instruction.qubits.at(0).reg != qubits) continue;
+                if (found && *found != instruction.target.reg) {
+                    throw std::runtime_error("dd backend: " + circuit.qasm.string() +
+                                             " measures " + role + " register '" + qubits +
+                                             "' into both '" + *found + "' and '" +
+                                             instruction.target.reg +
+                                             "'; a role must land in one register");
+                }
+                found = instruction.target.reg;
+            }
+            return found;
+        };
+
+        Records records;
+        const auto syndrome = target_of(circuit.syndrome_qubits, "qm");
+        if (!syndrome) {
+            throw std::runtime_error("dd backend: " + circuit.qasm.string() +
+                                     " never measures its qm register '" +
+                                     circuit.syndrome_qubits + "', so there is no syndrome");
+        }
+        records.syndrome = *syndrome;
+        if (circuit.flag_qubits) {
+            records.flag = target_of(*circuit.flag_qubits, "qf");
+            if (!records.flag) {
+                throw std::runtime_error("dd backend: " + circuit.qasm.string() +
+                                         " never measures its qf register '" +
+                                         *circuit.flag_qubits + "', so there is no flag");
+            }
+        }
+        return records_.emplace(key, std::move(records)).first->second;
+    }
+
     static std::vector<bool> read_register(
         const std::map<std::string, std::vector<bool>>& bits, const std::string& name,
         const CircuitRef& circuit) {
@@ -427,6 +478,7 @@ private:
 
     std::unique_ptr<pbdd::StabilizerCode>      code_;
     std::map<std::string, QasmProgram>         programs_;
+    std::map<std::string, Records>             records_;
     std::vector<std::vector<PauliSetBDD>>      states_;
 };
 

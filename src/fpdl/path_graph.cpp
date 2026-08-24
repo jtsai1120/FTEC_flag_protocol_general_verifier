@@ -425,8 +425,6 @@ struct Node {
     std::string phase;
     std::string se;
     std::string qasm_file;
-    std::string data_register;
-    std::string flag_register;
     std::optional<std::size_t> path_id;
     double x = 0;
     double y = 0;
@@ -438,8 +436,6 @@ struct EventData {
     std::string phase;
     std::string se;
     std::string qasm_file;
-    std::string data_register;
-    std::string flag_register;
     std::string syndrome;
     std::string flag;
 };
@@ -524,8 +520,6 @@ GraphModel build_graph(const Json& root_value, const GraphOptions& options) {
             data.phase = optional_string(event, "phase", "?");
             data.se = require_string(require_member(event, "se", "event"), "event.se");
             data.qasm_file = optional_string(event, "qasm_file");
-            data.data_register = optional_string(event, "data_register");
-            data.flag_register = optional_string(event, "flag_register");
             data.syndrome = optional_string(event, "s", "?");
             data.flag = optional_string(event, "f");
             events.push_back(std::move(data));
@@ -585,7 +579,6 @@ GraphModel build_graph(const Json& root_value, const GraphOptions& options) {
             std::ostringstream key;
             key << "event|" << event.round << '|' << event.invocation << '|'
                 << event.phase << '|' << event.se << '|' << event.qasm_file << '|'
-                << event.data_register << '|' << event.flag_register << '|'
                 << event.syndrome << '|' << event.flag;
             std::ostringstream label;
             label << "Round " << event.round << " · " << event.phase << " #"
@@ -600,8 +593,6 @@ GraphModel build_graph(const Json& root_value, const GraphOptions& options) {
             event_node.phase = event.phase;
             event_node.se = event.se;
             event_node.qasm_file = event.qasm_file;
-            event_node.data_register = event.data_register;
-            event_node.flag_register = event.flag_register;
             append_constraint(i + 1);
         }
 
@@ -894,12 +885,6 @@ std::string render_dag_json(const GraphModel& graph) {
                 << "\", \"qasm_file\": ";
             if (node.qasm_file.empty()) out << "null";
             else out << '"' << json_escape(node.qasm_file) << '"';
-            out << ", \"data_register\": ";
-            if (node.data_register.empty()) out << "null";
-            else out << '"' << json_escape(node.data_register) << '"';
-            out << ", \"flag_register\": ";
-            if (node.flag_register.empty()) out << "null";
-            else out << '"' << json_escape(node.flag_register) << '"';
         } else if (node.path_id) {
             out << ", \"path_id\": " << *node.path_id
                 << ", \"summary\": \"" << json_escape(node.title) << '"';
@@ -1000,15 +985,12 @@ DagVisualModel parse_dag_model(const Json& root_value) {
         } else if (node.kind == "se") {
             const std::string se = optional_string(object, "se", "?");
             const std::string qasm = optional_string(object, "qasm_file", "?");
-            const std::string data = optional_string(object, "data_register", "?");
-            const std::string flag = optional_string(object, "flag_register", "none");
             const std::string phase = optional_string(object, "phase", "?");
             const auto round = optional_size(object, "round").value_or(0);
             const auto invocation = optional_size(object, "invocation").value_or(0);
             std::ostringstream label;
             label << "State " << id << " · " << se << '\n'
                   << "QASM: " << qasm << '\n'
-                  << "data: " << data << " · flag: " << flag << '\n'
                   << "Round " << round << " · " << phase << " #" << invocation;
             node.label = label.str();
             node.title = node.label;

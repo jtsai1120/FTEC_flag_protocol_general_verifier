@@ -81,12 +81,7 @@ int main(int argc, char** argv) {
                 for (const auto& event : path.events) {
                     if (event.data_qubits.empty() || event.syndrome_qubits.empty()) {
                         std::cerr << argv[i] << ": SE '" << event.se_name
-                                  << "' does not name its qp/qm registers\n";
-                        return 1;
-                    }
-                    if (event.flag_qubits.has_value() != event.flag_register.has_value()) {
-                        std::cerr << argv[i] << ": SE '" << event.se_name
-                                  << "' has qf without cf, or the other way round\n";
+                                  << "' does not name its qd/qm registers\n";
                         return 1;
                     }
                     for (const auto& measured : event.measures) {
@@ -168,7 +163,7 @@ int main(int argc, char** argv) {
 
     const std::string prefix =
         "protocol bad: code: [[1,1,1]] [[I]] se: "
-        "g { file: \"x.qasm\" qp: q qm: q cm: c g: [[I]] } ";
+        "g { file: \"x.qasm\" qd: q qm: q g: [[I]] } ";
     if (!rejects(prefix +
                  "gvar: bit s = 0; tc: 1: true "
                  "af: while(!tc) { (s) = g(); } tp: 1: { end(); }")) {
@@ -193,9 +188,9 @@ int main(int argc, char** argv) {
     symbolic_options.bmc_bound = 40;
     const auto symbolic = fpdl::Parser::parse_string(
         "protocol branching: code: [[1,1,1]] [[I]] se: "
-        "first { file: \"first.qasm\" qp: q qm: q cm: m qf: qf cf: f g: [[I]] #-flag: 1 } "
-        "left { file: \"left.qasm\" qp: q qm: q cm: m g: [[I]] } "
-        "right { file: \"right.qasm\" qp: q qm: q cm: m g: [[I]] } "
+        "first { file: \"first.qasm\" qd: q qm: q qf: qf g: [[I]] #-flag: 1 } "
+        "left { file: \"left.qasm\" qd: q qm: q g: [[I]] } "
+        "right { file: \"right.qasm\" qd: q qm: q g: [[I]] } "
         "gvar: cnt n = 0; bit s = 0; bit f = 0; bit x = 0; "
         "tc: 1: n == 2 "
         "af: while(!tc) { "
@@ -228,10 +223,12 @@ int main(int argc, char** argv) {
                 std::cerr << "SE result did not use sequential id_N symbolic names\n";
                 return 1;
             }
-            if (event.data_register != "m" ||
-                (event.se_name == "first" && event.flag_register != "f") ||
-                (event.se_name != "first" && event.flag_register)) {
-                std::cerr << "SE event did not retain its QASM output registers\n";
+            // Only the quantum registers are declared now; a classical one is
+            // read off the circuit's measure statements instead.
+            if (event.data_qubits != "q" || event.syndrome_qubits != "q" ||
+                (event.se_name == "first" && event.flag_qubits != "qf") ||
+                (event.se_name != "first" && event.flag_qubits)) {
+                std::cerr << "SE event did not retain its QASM quantum registers\n";
                 return 1;
             }
         }
@@ -242,10 +239,6 @@ int main(int argc, char** argv) {
         symbolic_json.find("\"qasm_file\": \"left.qasm\"") ==
             std::string::npos ||
         symbolic_json.find("\"qasm_file\": \"right.qasm\"") ==
-            std::string::npos ||
-        symbolic_json.find("\"data_register\": \"m\"") ==
-            std::string::npos ||
-        symbolic_json.find("\"flag_register\": \"f\"") ==
             std::string::npos) {
         std::cerr << "symbolic-path JSON did not contain ordered QASM output\n";
         return 1;
@@ -253,8 +246,8 @@ int main(int argc, char** argv) {
 
     const auto continue_control = fpdl::Parser::parse_string(
         "protocol continue_control: code: [[1,1,1]] [[I]] se: "
-        "flagged { file: \"flagged.qasm\" qp: q qm: q cm: m qf: qf cf: f g: [[I]] #-flag: 1 } "
-        "plain { file: \"plain.qasm\" qp: q qm: q cm: m g: [[I]] } "
+        "flagged { file: \"flagged.qasm\" qd: q qm: q qf: qf g: [[I]] #-flag: 1 } "
+        "plain { file: \"plain.qasm\" qd: q qm: q g: [[I]] } "
         "gvar: cnt n = 0; bit s = ⊥; bit f = ⊥; bit other = ⊥; "
         "tc: 1: n == 2 "
         "af: while(!tc) { "
@@ -285,8 +278,8 @@ int main(int argc, char** argv) {
 
     const auto compound = fpdl::Parser::parse_string(
         "protocol compound: code: [[1,1,1]] [[I]] se: "
-        "flagged { file: \"flagged.qasm\" qp: q qm: q cm: m qf: qf cf: f g: [[I]] #-flag: 1 } "
-        "plain { file: \"plain.qasm\" qp: q qm: q cm: m g: [[I]] } "
+        "flagged { file: \"flagged.qasm\" qd: q qm: q qf: qf g: [[I]] #-flag: 1 } "
+        "plain { file: \"plain.qasm\" qd: q qm: q g: [[I]] } "
         "gvar: bit s = ⊥; bit f = ⊥; bit other = ⊥; "
         "tc: 1: (s == 0) and (f == 0) "
         "af: while(!tc) { "

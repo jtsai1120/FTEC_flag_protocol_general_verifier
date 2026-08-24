@@ -475,6 +475,11 @@ private:
 
     struct QasmRegisters {
         std::unordered_map<std::string, std::size_t> classical;
+        // Which classical register a measurement of each quantum register
+        // writes into. This is what makes a `cm:`/`cf:` declaration
+        // unnecessary: `m[0] = measure syn;` already binds the two, so naming
+        // the syndrome ancillas is enough to say where their outcome lands.
+        std::unordered_map<std::string, std::string> measured_into;
     };
 
     QasmRegisters inspect_qasm(const std::filesystem::path& path, SourceLocation location) {
@@ -490,6 +495,13 @@ private:
                 ? static_cast<std::size_t>(std::stoull((*it)[1].str())) : 1;
             result.classical[(*it)[2].str()] = width;
         }
+
+        const std::regex measurement(
+            R"(([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^\]]*\])?\s*=\s*measure\s+([A-Za-z_][A-Za-z0-9_]*))");
+        for (auto it = std::sregex_iterator(source.begin(), source.end(), measurement);
+             it != std::sregex_iterator(); ++it) {
+            result.measured_into[(*it)[2].str()] = (*it)[1].str();
+        }
         return result;
     }
 
@@ -501,9 +513,7 @@ private:
         std::vector<SyntaxEdge> fields;
         std::set<std::string> seen_fields;
         std::string file;
-        std::string cm;
-        std::string cf;
-        std::string qp;
+        std::string qd;
         std::string qm;
         std::string qf;
         NodeId generators_node = 0;
@@ -512,7 +522,7 @@ private:
         while (!match("}")) {
             const auto key = expect_kind(TokenKind::Identifier, "SE field name");
             static const std::set<std::string> valid_fields{
-                "file", "qp", "qm", "cm", "qf", "cf", "g", "#-flag"
+                "file", "qd", "qm", "qf", "g", "#-flag"
             };
             if (!valid_fields.contains(key.text)) fail_at(key.location, "unknown SE field '" + key.text + "'");
             if (!seen_fields.insert(key.text).second) fail_at(key.location, "duplicate SE field '" + key.text + "'");
@@ -531,9 +541,7 @@ private:
                 value = leaf("Integer", token.text, token.location);
             } else {
                 const auto token = expect_kind(TokenKind::Identifier, "register name");
-                if (key.text == "cm") cm = token.text;
-                if (key.text == "cf") cf = token.text;
-                if (key.text == "qp") qp = token.text;
+                if (key.text == "qd") qd = token.text;
                 if (key.text == "qm") qm = token.text;
                 if (key.text == "qf") { qf = token.text; has_qf = true; }
                 value = leaf("Identifier", token.text, token.location);
@@ -541,38 +549,40 @@ private:
             fields.push_back({key.text, value});
         }
 
-        for (const std::string required : {"file", "qp", "qm", "cm", "g"}) {
+        for (const std::string required : {"file", "qd", "qm", "g"}) {
             if (!seen_fields.contains(required)) fail_at(name.location, "SE '" + name.text + "' has no " + required + " field");
         }
-        const bool flagged = has_flag_claim || has_qf || !cf.empty();
-        if (flagged && !(has_flag_claim && has_qf && !cf.empty())) {
-            fail_at(name.location, "flagged SE '" + name.text + "' must define qf, cf, and #-flag together");
+        const bool flagged = has_flag_claim || has_qf;
+        if (flagged && !(has_flag_claim && has_qf)) {
+            fail_at(name.location, "flagged SE '" + name.text + "' must define qf and #-flag together");
         }
         const std::size_t arity = flagged ? 2 : 1;
         std::vector<SyntaxEdge> signature_edges;
         if (options_.inspect_qasm_registers && !file.empty()) {
             const auto resolved = source_path_.parent_path() / file;
             const auto registers = inspect_qasm(resolved.lexically_normal(), name.location);
-            const auto add_result = [&](std::string_view role, const std::string& register_name) {
-                const auto found = registers.classical.find(register_name);
+            // The classical register is not declared; it is whichever one the
+            // circuit's measurements of these ancillas write into.
+            const auto add_result = [&](std::string_view role, const std::string& qubits) {
+                const auto measured = registers.measured_into.find(qubits);
+                if (measured == registers.measured_into.end()) {
+                    fail_at(name.location, "SE '" + name.text + "': " + std::string(role) +
+                                               " register '" + qubits +
+                                               "' is never measured in the QASM");
+                }
+                const auto found = registers.classical.find(measured->second);
                 if (found == registers.classical.end()) {
-                    fail_at(name.location, "QASM classical register '" + register_name + "' not found for SE '" + name.text + "'");
+                    fail_at(name.location, "QASM classical register '" + measured->second + "' not found for SE '" + name.text + "'");
                 }
                 const std::string type = found->second == 1 ? "bit" : "bit[" + std::to_string(found->second) + "]";
                 signature_edges.push_back({std::string(role), leaf("Type", type, name.location)});
             };
-            if (cm.empty()) fail_at(name.location, "SE '" + name.text + "' has no cm field");
-            add_result("syndrome", cm);
-            if (arity == 2) {
-                if (cf.empty()) fail_at(name.location, "flagged SE '" + name.text + "' has no cf field");
-                add_result("flag", cf);
-            }
+            add_result("syndrome", qm);
+            if (arity == 2) add_result("flag", qf);
         }
         se_arity_[name.text] = arity;
         se_files_[name.text] = file;
-        se_data_registers_[name.text] = cm;
-        if (!cf.empty()) se_flag_registers_[name.text] = cf;
-        se_data_qubits_[name.text] = qp;
+        se_data_qubits_[name.text] = qd;
         se_syndrome_qubits_[name.text] = qm;
         if (!qf.empty()) se_flag_qubits_[name.text] = qf;
         if (generators_node != 0) {
@@ -1851,15 +1861,9 @@ private:
         const auto call = required_edge(id, "call");
         const std::string se_name = resolve_callee(call, state);
         const auto qasm = se_files_.find(se_name);
-        const auto data_register = se_data_registers_.find(se_name);
-        if (qasm == se_files_.end() || data_register == se_data_registers_.end()) {
+        if (qasm == se_files_.end()) {
             set_error(state, "cannot resolve QASM metadata for SE '" + se_name + "'");
             return {std::move(state)};
-        }
-        std::optional<std::string> flag_register;
-        if (const auto found = se_flag_registers_.find(se_name);
-            found != se_flag_registers_.end()) {
-            flag_register = found->second;
         }
         ++state.invocation;
         const std::string stem =
@@ -1868,8 +1872,7 @@ private:
         std::optional<std::string> flag;
         if (targets.size() == 2) flag = stem + ".f";
         state.path.events.push_back({state.round, state.invocation, state.phase,
-                                     se_name, qasm->second, data_register->second,
-                                     flag_register, syndrome, flag,
+                                     se_name, qasm->second, syndrome, flag,
                                      lookup_or_empty(se_data_qubits_, se_name),
                                      lookup_or_empty(se_syndrome_qubits_, se_name),
                                      lookup_optional(se_flag_qubits_, se_name),
@@ -2237,8 +2240,6 @@ private:
     std::unordered_map<std::string, std::string> se_flag_qubits_;
     std::unordered_map<std::string, std::vector<std::string>> se_measures_;
     CodeSpec code_;
-    std::unordered_map<std::string, std::string> se_data_registers_;
-    std::unordered_map<std::string, std::string> se_flag_registers_;
     std::set<std::string> global_names_;
     std::set<std::string> tc_ids_;
     std::set<std::string> tp_ids_;
@@ -2291,14 +2292,7 @@ std::string ParseResult::to_json() const {
                 << ", \"phase\": \"" << json_escape(event.phase)
                 << "\", \"se\": \"" << json_escape(event.se_name)
                 << "\", \"qasm_file\": \"" << json_escape(event.qasm_file)
-                << "\", \"data_register\": \"" << json_escape(event.data_register)
-                << "\", \"flag_register\": ";
-            if (event.flag_register) {
-                out << '"' << json_escape(*event.flag_register) << '"';
-            } else {
-                out << "null";
-            }
-            out << ", \"s\": \"" << json_escape(event.syndrome)
+                << "\", \"s\": \"" << json_escape(event.syndrome)
                 << "\", \"f\": ";
             if (event.flag) out << '"' << json_escape(*event.flag) << '"'; else out << "null";
             out << '}';

@@ -12,15 +12,18 @@ namespace ftec {
 
 // Which QASM to run and what the registers in it mean. Assembled from an SE
 // declaration; the qasm path is resolved against the .fpdl's directory.
+//
+// Only the quantum registers appear. Where a measurement outcome lands is not
+// a separate fact to declare -- `m[0] = measure syn;` already binds the
+// classical register to the qubit -- so a backend reads it off the circuit.
+// Whether an SE is flagged is `flag_qubits.has_value()`.
 struct CircuitRef {
     std::string           se_name;
     std::filesystem::path qasm;
 
-    std::string                data_qubits;      // qp:
+    std::string                data_qubits;      // qd:
     std::string                syndrome_qubits;  // qm:
     std::optional<std::string> flag_qubits;      // qf:
-    std::string                syndrome_bits;    // cm:
-    std::optional<std::string> flag_bits;        // cf:
 
     std::vector<std::string> measures;           // g:
 };

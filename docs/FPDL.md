@@ -91,11 +91,9 @@ must be rejected.
 se:
     <se_name> {
         file: <OpenQASM_file_path>
-        qp: <physical_qreg>
+        qd: <data_qreg>
         qm: <measurement_qreg>
-        cm: <measurement_creg>
         qf: <flag_qreg>                     # required only for a flagged SE
-        cf: <flag_creg>                     # required only for a flagged SE
         g:  <generator_set>                 # claimed measured generator(s)
         #-flag: <t>                         # required only for a flagged SE
     }
@@ -103,6 +101,13 @@ se:
 
 A relative `file` path is resolved relative to the directory containing the
 `.fpdl` file.
+
+Only quantum registers are declared. Where an outcome lands is not a separate
+fact: `m[0] = measure syn;` in the QASM already binds a classical register to
+the qubit it reads, so naming the syndrome and flag ancillas is enough for a
+backend to find the syndrome and flag records. Declaring the classical
+registers as well would let the two disagree, with the syndrome read silently
+off the flag register.
 
 An SE is a black-boxed, atomic operation when called from `af` or `tp`. Every SE
 invocation returns a tuple:
@@ -115,8 +120,9 @@ invocation returns a tuple:
 Here, the **return type** means the number and type of values returned by the
 invocation. `s` has type `bit` for a one-bit syndrome and `bit[L]` for an
 `L`-bit syndrome. Likewise, `f` has type `bit` or `bit[F]` according to the
-width of `cf`. The parser obtains the register widths from the referenced QASM
-file and checks that the tuple arity and destination types agree. The ordering
+width of the flag register. The parser obtains the register widths from the
+referenced QASM file -- finding each register by which measurement writes to it
+-- and checks that the tuple arity and destination types agree. The ordering
 of tuple members is always syndrome first and flag second.
 
 SE references may carry a return signature. For example:

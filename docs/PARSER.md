@@ -25,8 +25,9 @@ reached, the result has `"truncated": true` and the CLI emits a warning.
 The public C++ result is `std::vector<fpdl::SymbolicPath>`. No DAG or
 hash-consing is used. Every path contains:
 
-- ordered SE events, including each SE's declared QASM filename, `cm`/`cf`
-  output-register names, and multiple invocations in one adaptive round;
+- ordered SE events, including each SE's declared QASM filename, its `qd`/`qm`
+  and optional `qf` quantum registers, and multiple invocations in one adaptive
+  round;
 - a `qasm_sequence` array containing the invoked QASM filenames in exact path
   execution order, including repetitions across adaptive and
   terminating-policy rounds;
@@ -103,9 +104,9 @@ to infer a best-effort location.
 ## Build a control-flow DAG from JSON
 
 `fpdl-path-dag` converts symbolic paths into a shared-prefix DAG encoded as
-JSON. SE nodes contain the declared QASM filename plus the `cm` data register
-and optional `cf` flag register. Conditions are stored on edges; an edge without
-an additional branch constraint has `"condition": "true"`.
+JSON. SE nodes contain the declared QASM filename. Conditions are stored on
+edges; an edge without an additional branch constraint has
+`"condition": "true"`.
 
 ```sh
 ./build/fpdl-path-dag protocol.paths.json \

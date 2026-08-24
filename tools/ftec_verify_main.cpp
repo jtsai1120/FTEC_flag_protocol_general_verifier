@@ -93,7 +93,7 @@ public:
     std::vector<std::pair<ftec::Outcome, StateId>> step(StateId id,
                                                         const ftec::CircuitRef& circuit) override {
         steps_.push_back(circuit.se_name);
-        const bool flagged = circuit.flag_bits.has_value();
+        const bool flagged = circuit.flag_qubits.has_value();
 
         std::vector<std::pair<ftec::Outcome, StateId>> out;
         const auto emit = [&](bool s, bool f, int cost) {

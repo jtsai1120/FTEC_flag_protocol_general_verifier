@@ -29,8 +29,8 @@ int main() {
           "tc": 1, "tp": 1, "terminal_action": "decode",
           "decode_record": "mr[id_1.s, id_2.s]", "assertion_error": null,
           "events": [
-            {"round": 1, "invocation": 1, "phase": "af", "se": "first", "qasm_file": "first.qasm", "data_register": "m", "flag_register": "f", "s": "id_1.s", "f": "id_1.f"},
-            {"round": 2, "invocation": 1, "phase": "tp", "se": "left", "qasm_file": "left.qasm", "data_register": "m", "flag_register": null, "s": "id_2.s", "f": null}
+            {"round": 1, "invocation": 1, "phase": "af", "se": "first", "qasm_file": "first.qasm", "s": "id_1.s", "f": "id_1.f"},
+            {"round": 2, "invocation": 1, "phase": "tp", "se": "left", "qasm_file": "left.qasm", "s": "id_2.s", "f": null}
           ],
           "constraints": [{"expression": "(id_1.s) == (0)", "expected": true}]
         },
@@ -40,8 +40,8 @@ int main() {
           "tc": 2, "tp": 2, "terminal_action": "end",
           "decode_record": null, "assertion_error": null,
           "events": [
-            {"round": 1, "invocation": 1, "phase": "af", "se": "first", "qasm_file": "first.qasm", "data_register": "m", "flag_register": "f", "s": "id_1.s", "f": "id_1.f"},
-            {"round": 2, "invocation": 1, "phase": "tp", "se": "right", "qasm_file": "right.qasm", "data_register": "m", "flag_register": null, "s": "id_2.s", "f": null}
+            {"round": 1, "invocation": 1, "phase": "af", "se": "first", "qasm_file": "first.qasm", "s": "id_1.s", "f": "id_1.f"},
+            {"round": 2, "invocation": 1, "phase": "tp", "se": "right", "qasm_file": "right.qasm", "s": "id_2.s", "f": null}
           ],
           "constraints": [{"expression": "(id_1.s) == (0)", "expected": false}]
         }
@@ -72,8 +72,6 @@ int main() {
             json, fpdl::GraphFormat::DagJson);
         if (dag.content.find("\"kind\": \"se\"") == std::string::npos ||
             dag.content.find("\"qasm_file\": \"first.qasm\"") == std::string::npos ||
-            dag.content.find("\"data_register\": \"m\"") == std::string::npos ||
-            dag.content.find("\"flag_register\": \"f\"") == std::string::npos ||
             dag.content.find("\"condition\": \"(id_1.s) == (0)\"") ==
                 std::string::npos ||
             dag.content.find("\"condition\": \"NOT ((id_1.s) == (0))\"") ==
@@ -86,7 +84,6 @@ int main() {
             dag.content, fpdl::GraphFormat::Svg);
         if (dag_svg.content.find("<svg") == std::string::npos ||
             dag_svg.content.find("first.qasm") == std::string::npos ||
-            dag_svg.content.find("data: m") == std::string::npos ||
             dag_svg.content.find("(id_1.s) == (0)") == std::string::npos ||
             occurrences(dag_svg.content, "data-kind=\"se\"") < 3) {
             std::cerr << "DAG SVG did not visualize states and edge conditions\n";

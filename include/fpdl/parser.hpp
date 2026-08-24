@@ -86,17 +86,17 @@ struct SEEvent {
     std::string se_name;
     // Exact file value from the invoked SE's `file:` declaration.
     std::string qasm_file;
-    // QASM *classical* output registers declared by `cm:` and optional `cf:`.
-    // The names predate the quantum-register fields below; "data_register"
-    // here means the classical syndrome register, not the data qubits.
-    std::string data_register;
-    std::optional<std::string> flag_register;
     std::string syndrome;
     std::optional<std::string> flag;
 
-    // QASM *quantum* registers declared by `qp:`, `qm:` and optional `qf:`.
+    // QASM *quantum* registers declared by `qd:`, `qm:` and optional `qf:`.
     // A backend needs these to know which qubits carry the encoded state
     // across rounds and which are ancillas it may reset.
+    //
+    // There is deliberately no classical counterpart. Which classical register
+    // holds a syndrome is not a separate fact: `m[0] = measure syn;` already
+    // says it, so a backend reads it off the circuit rather than being told
+    // twice and having to trust that the two agree.
     std::string data_qubits;
     std::string syndrome_qubits;
     std::optional<std::string> flag_qubits;

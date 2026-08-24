@@ -15,7 +15,7 @@ namespace ftec {
 //
 // This deliberately says nothing about Paulis, faults or error models. Which
 // register holds the encoded state and which are ancillas is a question the
-// protocol answers (qp:/qm:/qf: in the .fpdl), not the circuit; and how a
+// protocol answers (qd:/qm:/qf: in the .fpdl), not the circuit; and how a
 // gate acts on a symbolic state is a backend's business. Keeping the front end
 // ignorant of both is what lets a second backend reuse it.
 

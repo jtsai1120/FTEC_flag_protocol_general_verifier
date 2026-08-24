@@ -7,7 +7,7 @@
 
 ```
 .fpdl ──► fpdl::Parser ──┬─► code: [[n,k,d]] + generators ──► tau = ⌊(d−1)/2⌋
-                          ├─► SE 宣告(qp/qm/qf, cm/cf, file)
+                          ├─► SE 宣告(qd/qm/qf, file)
                           └─► SymbolicPaths ──► ftec::build_dag ──► trie
                                                                      │
                                                           DFS + 條件路由

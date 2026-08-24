@@ -24,9 +24,8 @@ protocol CB_18_[[17,1,5]]_plain:
     se:
         FSE_b {
             file: "./FSE_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[Z1, Z2, Z3, Z4],
              [X1, X2, X3, X4],
              [Z1, Z3, Z5, Z6],
@@ -47,11 +46,9 @@ protocol CB_18_[[17,1,5]]_plain:
 
         FSE_f {
             file: "./FSE_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z1, Z2, Z3, Z4],
              [X1, X2, X3, X4],
              [Z1, Z3, Z5, Z6],

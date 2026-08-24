@@ -48,7 +48,7 @@ public:
     std::vector<std::pair<ftec::Outcome, StateId>> step(StateId id,
                                                         const ftec::CircuitRef& circuit) override {
         steps_.push_back(circuit.se_name);
-        const bool flagged = circuit.flag_bits.has_value();
+        const bool flagged = circuit.flag_qubits.has_value();
 
         std::vector<std::pair<ftec::Outcome, StateId>> out;
         const auto emit = [&](bool s, bool f, int cost) {
@@ -163,10 +163,8 @@ int main(int argc, char** argv) {
             check(!node.circuit.se_name.empty(), "SE node names its circuit");
             check(std::filesystem::exists(node.circuit.qasm),
                   "QASM resolves: " + node.circuit.qasm.string());
-            check(!node.circuit.data_qubits.empty(), "SE node names qp");
+            check(!node.circuit.data_qubits.empty(), "SE node names qd");
             check(!node.circuit.syndrome_qubits.empty(), "SE node names qm");
-            check(node.circuit.flag_qubits.has_value() == node.circuit.flag_bits.has_value(),
-                  "qf and cf agree");
         }
 
         // --- the walk reaches every path, running each SE once --------------

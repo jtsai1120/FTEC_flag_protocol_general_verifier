@@ -12,53 +12,44 @@ protocol Bha23_[[5,1,3]]:
     se:
         XZZXI_f {
             file: "./XZZXI_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X,Z,Z,X,I]]
             #-flag: 1
         }    
 
         IXZZX_f {
             file: "./IXZZX_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[I,X,Z,Z,X]]
             #-flag: 1
         }    
 
         XIXZZ_f {
             file: "./XIXZZ_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X,I,X,Z,Z]]
             #-flag: 1
         }    
 
         ZXIXZ_f {
             file: "./ZXIXZ_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z,X,I,X,Z]]
             #-flag: 1
         }        
 
         FSE_b {
             file: "./FSE_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[X,Z,Z,X,I],
              [I,X,Z,Z,X],
              [X,I,X,Z,Z],
@@ -67,73 +58,64 @@ protocol Bha23_[[5,1,3]]:
 
         XZZXI_b {
             file: "./XZZXI_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[X,Z,Z,X,I]]
         }
 
         IXZZX_b {
             file: "./IXZZX_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[I,X,Z,Z,X]]
         }
 
         XIXZZ_b {
             file: "./XIXZZ_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[X,I,X,Z,Z]]
         }
 
         ZXIXZ_b {
             file: "./ZXIXZ_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[Z,X,I,X,Z]]
         }
 
         IYXXY_b {
             file: "./IYXXY_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[I,Y,X,X,Y]]
         }
 
         YIYXX_b {
             file: "./YIYXX_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[Y,I,Y,X,X]]
         }
 
         YXXYI_b {
             file: "./YXXYI_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[Y,X,X,Y,I]]
         }
 
         YZIZY_b {
             file: "./YZIZY_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[Y,Z,I,Z,Y]]
         }
 
         ZIZYY_b {
             file: "./ZIZYY_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[Z,I,Z,Y,Y]]
         }
 
