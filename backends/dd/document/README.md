@@ -144,8 +144,8 @@ bool operator!=(const PauliSetBDD &) const;
 **6 個 Gate**(語意見下節)
 
 ```cpp
-PauliSetBDD apply_X(int q) const;                      // composition
-PauliSetBDD apply_Z(int q) const;                      // composition
+PauliSetBDD apply_X(int q) const;                      // conjugation (identity)
+PauliSetBDD apply_Z(int q) const;                      // conjugation (identity)
 PauliSetBDD apply_H(int q) const;                      // conjugation
 PauliSetBDD apply_CX(int control, int target) const;   // conjugation
 PauliSetBDD apply_CY(int control, int target) const;   // conjugation
@@ -331,43 +331,44 @@ CLI 也接了這個:
 帶的資訊也已經在 `mr` 裡了,印出來只是雜訊。不同的完整字串可能共用同一段 data,
 所以印之前會去重(因此列出的行數可能少於 `|set|`)。
 
-## 6 個 Gate:composition vs. conjugation
+## 6 個 Gate:全部都是 conjugation
 
-X, Z, H, CX, CY, CZ 這 6 個 gate 對 Pauli 集合的作用,分成**兩種不同語意**,不要
-混為一談:
+X, Z, H, CX, CY, CZ 這 6 個 gate 對 Pauli 集合的作用**全部都是 conjugation**:
+`P → U P U†`,標準的 stabilizer tableau update rule(對應 Aaronson–Gottesman)。
 
-- **X、Z 是 composition(Pauli 群乘法)**:X、Z 本身就是 Pauli 群的元素,施加
-  X/Z gate 代表把它的 `(x,z)` 直接乘(XOR)到集合裡每個字串「目前」的
-  `(x,z)` 上——例如目前是 X,施加 X gate 變成 I;目前是 X,施加 Z gate 變成
-  Y。這**不是**「不追蹤相位所以是 identity」。
-- **H、CX、CY、CZ 是 conjugation(標準 stabilizer tableau update rule,對應
-  Aaronson–Gottesman)**:這三個是 Clifford 群元素、不是 Pauli 群元素,沒有
-  自己的 `(x,z)` 可以乘,唯一有意義的作用方式是 `P → U P U†`。
+理由是集合裡放的是**誤差**,而誤差是相對於「理想電路會產生的狀態」定義的。電路施
+加一個 gate `U` 時,理想態也跟著動,所以誤差 `E` 變成 `U E U†`。這對電路裡的每一
+個 gate 都成立,包含 Pauli gate。
+
+**X、Z 因此是 identity。** `X P X† = (−1)^{p_z} P`、`Z P Z† = (−1)^{p_x} P`,只差
+一個相位,而這個表示法不追蹤相位。直觀地說:電路裡的 `x` 屬於**理想計算**的一部
+分,不是對它的偏離,所以它不可能改變「有哪些誤差是可能的」。
+
+> **注意**:早期版本把 X/Z 實作成 composition(把 gate 自己的 `(x,z)` XOR 到集合
+> 上),那是錯的——那等於把理想電路自己的 Pauli gate 當成注入的誤差。已修正。
 
 在 symplectic representation 上的具體變換(不含相位):
 
-| Gate | 語意 | 變換 |
-|---|---|---|
-| X(q) | composition | `(x_q, z_q) → (x_q ⊕ 1, z_q)`,只翻 x 分量 |
-| Z(q) | composition | `(x_q, z_q) → (x_q, z_q ⊕ 1)`,只翻 z 分量 |
-| H(q) | conjugation | `(x_q, z_q) → (z_q, x_q)`(swap) |
-| CX(c,t) | conjugation | `x_t' = x_t ⊕ x_c`,`z_c' = z_c ⊕ z_t`,其餘不變 |
-| CY(c,t) | conjugation | `z_c' = z_c ⊕ x_t ⊕ z_t`,`x_t' = x_t ⊕ x_c`,`z_t' = z_t ⊕ x_c`,`x_c` 不變 |
-| CZ(c,t) | conjugation | `z_c' = z_c ⊕ x_t`,`z_t' = z_t ⊕ x_c`,其餘不變 |
+| Gate | 變換 |
+|---|---|
+| X(q) | identity(`X P X† = ±P`) |
+| Z(q) | identity(`Z P Z† = ±P`) |
+| H(q) | `(x_q, z_q) → (z_q, x_q)`(swap) |
+| CX(c,t) | `x_t' = x_t ⊕ x_c`,`z_c' = z_c ⊕ z_t`,其餘不變 |
+| CY(c,t) | `z_c' = z_c ⊕ x_t ⊕ z_t`,`x_t' = x_t ⊕ x_c`,`z_t' = z_t ⊕ x_c`,`x_c` 不變 |
+| CZ(c,t) | `z_c' = z_c ⊕ x_t`,`z_t' = z_t ⊕ x_c`,其餘不變 |
 
-**實作方式**:全部用 `bdd_compose(f, g, v)`(把 `f` 裡變數 `v` 替換成布林函數
-`g`,單次走訪、靠 operator cache 記憶化)搞定:
+**實作方式**:
 
-- X/Z:`bdd_compose(f, bdd_nithvar(v), v)`——把 `v` 換成 `¬v`,等於把集合裡
-  每個字串在該變數上的值取反。單一變數替換,一次走訪就是最有效率的做法。
+- X/Z:直接 `return *this`,不碰 BDD。
 - H:`bdd_replace` + `bdd_newpair`,把 `xvar(q)`、`zvar(q)` 設成互換的 pair,
   純粹改名,不涉及 XOR。
 - CX/CY/CZ:多個變數要**同時**換成「XOR 運算式」(例如 CX 的 `xvar(t) := xvar(t) ^
   xvar(c)`、`zvar(c) := zvar(c) ^ zvar(t)`),用 `bdd_newpair` +
   `bdd_setbddpair`(pair 的替換目標可以是任意 BDD,不只是變數編號)建 pair
-  table,再用 **`bdd_veccompose`** 一次做完兩個替換。BuDDy 文件明講:要同時替換
+  table,再用 **`bdd_veccompose`** 一次做完。BuDDy 文件明講:要同時替換
   多個變數時,`bdd_veccompose` 比連續呼叫 `bdd_compose` 有效率(只走訪一遍,
-  不是兩遍)。因為 CX、CY、CZ 在這個表示法下都是對合(套用兩次等於沒套用),所以可
+  不是兩遍)。因為這些 gate 在這個表示法下都是對合(套用兩次等於沒套用),所以可
   以直接代入正向規則,不需要額外建構 transition relation BDD 或用
   `bdd_exist`/`bdd_appex` 做 relational product。
 

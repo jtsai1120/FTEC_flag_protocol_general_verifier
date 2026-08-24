@@ -162,15 +162,25 @@ bool PauliSetBDD::contains(const std::string &paulis) const {
 
 PauliSetBDD PauliSetBDD::apply_X(int q) const {
     check_qubit(q, n_, "apply_X");
-    // X is itself a Pauli-group element ((x,z)=(1,0)): composing it onto
-    // every string means XOR-ing its x-bit, i.e. flip x_q across the set.
-    return PauliSetBDD(substitute(f_, xvar(q), bdd_nithvar(xvar(q))));
+    // Conjugation, like every other gate here -- and conjugation by X is the
+    // identity on this representation.
+    //
+    // The set holds *errors*, defined relative to what the ideal circuit would
+    // have produced. A gate U carries an error E to U E U^, because the ideal
+    // state moves under U too. For a Pauli gate that comes out trivial:
+    //
+    //     X P X^ = (-1)^{p_z} P
+    //
+    // so the image differs from P only by a sign, and phase is not tracked.
+    // An x in the circuit is part of the *ideal* computation, not a deviation
+    // from it, so it cannot change which errors are possible.
+    return *this;
 }
 
 PauliSetBDD PauliSetBDD::apply_Z(int q) const {
     check_qubit(q, n_, "apply_Z");
-    // Z = (0,1): flip z_q across the set.
-    return PauliSetBDD(substitute(f_, zvar(q), bdd_nithvar(zvar(q))));
+    // Z P Z^ = (-1)^{p_x} P; identity here for the same reason as apply_X.
+    return *this;
 }
 
 PauliSetBDD PauliSetBDD::apply_H(int q) const {

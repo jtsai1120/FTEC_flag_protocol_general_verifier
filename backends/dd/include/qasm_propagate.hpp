@@ -44,8 +44,10 @@ struct SyndromeBranch {
 // adds at most one fault to any lineage. Single-qubit gates are assumed
 // fault-free and therefore never spawn.
 //
-// x and z are composed onto the set (Pauli-frame semantics, PauliSetBDD::
-// apply_X / apply_Z); h, cx, cy, cz conjugate it.
+// Every gate conjugates the set: an error is defined against what the ideal
+// circuit would have produced, and the ideal state moves under the gate too.
+// For x and z that conjugation is the identity, since X P X^ and Z P Z^ differ
+// from P only by a phase this representation does not track.
 //
 // SYNDROME SPLIT (after the last tic): measurement is in the Z basis, so the
 // outcome for qm[j] flips exactly when the Pauli sitting on it anticommutes

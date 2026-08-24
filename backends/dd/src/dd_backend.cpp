@@ -315,6 +315,8 @@ private:
             for (auto& level : by_t) {
                 if (gate == "x") level = level.apply_X(q);
                 else if (gate == "z") level = level.apply_Z(q);
+                // x, y and z conjugate to themselves up to a phase, so they
+                // leave the error set alone; apply_X / apply_Z say so.
                 else if (gate == "y") level = level.apply_X(q).apply_Z(q);
                 else if (gate == "h") level = level.apply_H(q);
                 else if (gate == "s" || gate == "sdg") level = level.apply_S(q);

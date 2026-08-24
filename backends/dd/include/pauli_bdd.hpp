@@ -65,15 +65,18 @@ public:
     PauliSetBDD operator!() const;                         // complement (within the 4^n universe)
 
     // --- gates ----------------------------------------------------------
-    // Every string in the set is transformed independently; the returned
-    // set is the image of *this under the gate. See README.md "5 個 Gate"
-    // for the two distinct semantics in play:
-    //   - X, Z are themselves Pauli-group elements: applying them means
-    //     *composing* (group-multiplying, phase ignored) the gate's own
-    //     (x,z) onto every string's per-qubit (x,z) -- an XOR on one bit.
-    //   - H, S, CX, CY, CZ are Clifford (not Pauli) elements: applying them means
-    //     *conjugation*, P -> U P U^ (the standard stabilizer-tableau
-    //     update rule), since they have no (x,z) of their own to compose.
+    // Every string in the set is transformed independently; the returned set
+    // is the image of *this under the gate.
+    //
+    // All of them are *conjugations*: P -> U P U^, the standard
+    // stabilizer-tableau update. That is what propagating an error through a
+    // gate means -- the ideal state moves under U as well, so an error E
+    // measured against it becomes U E U^.
+    //
+    // For X and Z that update is the identity, since X P X^ = (-1)^{p_z} P and
+    // Z P Z^ = (-1)^{p_x} P differ from P only by a sign this representation
+    // does not track. They are kept as named no-ops rather than removed,
+    // because a circuit may still contain them and a backend has to accept it.
     PauliSetBDD apply_X(int q) const;
     PauliSetBDD apply_Z(int q) const;
     PauliSetBDD apply_H(int q) const;

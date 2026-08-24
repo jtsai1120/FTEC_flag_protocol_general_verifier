@@ -11,26 +11,20 @@ int main() {
     const int n = 2;
     PauliSetBDD::init(n);
 
-    // --- apply_X / apply_Z: composition (Pauli-group multiplication),
-    // NOT conjugation. Flips exactly one of the two bits on qubit q.
-    //   apply_X(q): (x,z) -> (x^1, z)      I<->X, Z<->Y
-    //   apply_Z(q): (x,z) -> (x, z^1)      I<->Z, X<->Y
-    assert(PauliSetBDD::single("II").apply_X(0) == PauliSetBDD::single("XI"));
-    assert(PauliSetBDD::single("XI").apply_X(0) == PauliSetBDD::single("II"));
-    assert(PauliSetBDD::single("ZI").apply_X(0) == PauliSetBDD::single("YI"));
-    assert(PauliSetBDD::single("YI").apply_X(0) == PauliSetBDD::single("ZI"));
-    assert(PauliSetBDD::single("IX").apply_X(1) == PauliSetBDD::single("II"));
-
-    assert(PauliSetBDD::single("II").apply_Z(0) == PauliSetBDD::single("ZI"));
-    assert(PauliSetBDD::single("XI").apply_Z(0) == PauliSetBDD::single("YI"));
-    assert(PauliSetBDD::single("ZI").apply_Z(0) == PauliSetBDD::single("II"));
-    assert(PauliSetBDD::single("YI").apply_Z(0) == PauliSetBDD::single("XI"));
-    std::cout << "apply_X / apply_Z composition tests passed\n";
-
-    // X, Z applied twice is the identity map (each is its own inverse).
-    assert(PauliSetBDD::single("YZ").apply_X(0).apply_X(0) == PauliSetBDD::single("YZ"));
-    assert(PauliSetBDD::single("YZ").apply_Z(1).apply_Z(1) == PauliSetBDD::single("YZ"));
-    std::cout << "apply_X / apply_Z involution tests passed\n";
+    // --- apply_X / apply_Z: conjugation, like every other gate -- and
+    // conjugation by a Pauli is the identity on a phase-free representation,
+    // since X P X^ = (-1)^{p_z} P and Z P Z^ = (-1)^{p_x} P.
+    //
+    // Every Pauli on every qubit must come back unchanged. Getting this wrong
+    // in the other direction is silent: composing instead would turn a gate
+    // that belongs to the *ideal* circuit into an error injected on top of it.
+    for (const std::string& p : {"II", "XI", "ZI", "YI", "IX", "IZ", "IY", "XZ", "YY"}) {
+        for (int q = 0; q < n; ++q) {
+            assert(PauliSetBDD::single(p).apply_X(q) == PauliSetBDD::single(p));
+            assert(PauliSetBDD::single(p).apply_Z(q) == PauliSetBDD::single(p));
+        }
+    }
+    std::cout << "apply_X / apply_Z conjugation tests passed (identity on every Pauli)\n";
 
     // --- apply_H: conjugation, (x_q,z_q) -> (z_q,x_q) swap.
     assert(PauliSetBDD::single("II").apply_H(0) == PauliSetBDD::single("II"));

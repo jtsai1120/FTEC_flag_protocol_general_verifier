@@ -57,8 +57,11 @@ void set_bits(std::string &s, int q, int x, int z) {
 }
 
 std::string ref_gate(std::string p, const std::string &kind, int a, int b) {
-    if (kind == "x") set_bits(p, a, xbit(p, a) ^ 1, zbit(p, a));
-    else if (kind == "z") set_bits(p, a, xbit(p, a), zbit(p, a) ^ 1);
+    // Every gate conjugates. For x and z that is the identity on a phase-free
+    // Pauli, so they are listed and do nothing -- circuits below still contain
+    // them, which is exactly what makes both implementations agree they are
+    // inert rather than agree by never meeting one.
+    if (kind == "x" || kind == "z") { (void)a; }
     else if (kind == "h") set_bits(p, a, zbit(p, a), xbit(p, a));
     else if (kind == "cx") {
         const int xc = xbit(p, a), zt = zbit(p, b);
@@ -307,11 +310,17 @@ int main() {
 
     std::cout << "\n== register flattening (qd first, then qm) ==\n";
     {
-        write_qasm("OPENQASM 3.0;\nqubit[2] qd;\nqubit[3] qm;\nx qd[1];\nx qm[2];\n");
-        QasmPropagation p = propagate_qasm(kTmp, 0);
+        // A fault location is the only thing that can put a non-identity Pauli
+        // into the set -- an x in the circuit is part of the ideal computation
+        // and conjugates away -- so the flattening is read off where the fault
+        // injected by this cx lands: qd[1] -> 1 and qm[2] -> 2 + 2 = 4.
+        write_qasm("OPENQASM 3.0;\nqubit[2] qd;\nqubit[3] qm;\ncx qd[1], qm[2];\n");
+        QasmPropagation p = propagate_qasm(kTmp, 1);
         assert(p.data_qubit(0) == 0 && p.data_qubit(1) == 1);
         assert(p.measure_qubit(0) == 2 && p.measure_qubit(2) == 4);
-        assert(p.at(0).contains("IXIIX"));  // qd[1] = X at pos 1, qm[2] = X at pos 4
+        assert(p.at(1).contains("IXIIX"));
+        assert(p.at(1).contains("IZIIZ"));
+        assert(!p.at(1).contains("XIIII"));   // nothing lands outside the pair
         std::cout << "    qd[i] -> i, qm[j] -> nd + j\n";
     }
 
@@ -320,14 +329,14 @@ int main() {
     {
         write_qasm(h11 + "x qd[0];\n");
         QasmPropagation p = propagate_qasm(kTmp, 0);
-        assert(p.at(0).size() == 1.0 && p.at(0).contains("XI"));
-        std::cout << "    x composes onto the frame: I -> X\n";
+        assert(p.at(0).size() == 1.0 && p.at(0).contains("II"));
+        std::cout << "    x leaves the frame alone: conjugation by a Pauli is trivial\n";
     }
     {
         write_qasm(h11 + "x qd[0];\nh qd[0];\n");
         QasmPropagation p = propagate_qasm(kTmp, 0);
-        assert(p.at(0).contains("ZI"));
-        std::cout << "    x then h -> Z (composition then conjugation)\n";
+        assert(p.at(0).contains("II"));
+        std::cout << "    x then h -> still I; only the h would move a real error\n";
     }
     {
         write_qasm(h11 + "x qd[0];\nx qd[0];\n");
@@ -336,21 +345,18 @@ int main() {
         std::cout << "    x twice -> I\n";
     }
     {
-        // cx spanning the two registers is the whole point of having them.
-        write_qasm(h11 + "x qd[0];\ncx qd[0], qm[0];\n");
-        QasmPropagation p = propagate_qasm(kTmp, 0);
-        assert(p.at(0).contains("XX"));  // X on the control copies onto the target
-        std::cout << "    cross-register cx propagates X from qd to qm\n";
+        // A fault at a cross-register cx lands on exactly the two qubits it
+        // touches -- which is also the only way anything non-identity gets
+        // into the set, now that a Pauli gate conjugates away.
+        write_qasm(h11 + "cx qd[0], qm[0];\n");
+        QasmPropagation p = propagate_qasm(kTmp, 1, /*reset_measure=*/false);
+        assert(p.n_tics() == 1 && p.n_fault_locations() == 1);
+        assert(p.at(1).size() == 16.0);
+        assert(p.at(1).contains("XX") && p.at(1).contains("IZ"));
+        std::cout << "    cross-register cx is one fault location spanning qd and qm\n";
     }
     {
-        // cy is accepted too: X_c -> X_c Y_t.
-        write_qasm(h11 + "x qd[0];\ncy qd[0], qm[0];\n");
-        QasmPropagation p = propagate_qasm(kTmp, 0, /*reset_measure=*/false);
-        assert(p.at(0).contains("XY"));
-        std::cout << "    cy accepted: X on the control lands as Y on the target\n";
-    }
-    {
-        // ... and it counts as a fault location like any two-qubit gate.
+        // cy is accepted and counts as a fault location like any two-qubit gate.
         write_qasm(h11 + "cy qd[0], qm[0];\n");
         QasmPropagation p = propagate_qasm(kTmp, 1);
         assert(p.n_tics() == 1 && p.n_fault_locations() == 1);
@@ -360,41 +366,38 @@ int main() {
 
     std::cout << "\n== syndrome convention (Z-basis: syndrome = x component) ==\n";
     {
-        write_qasm(h11 + "x qm[0];\n");   // frame IX
-        QasmPropagation p = propagate_qasm(kTmp, 0);
-        assert(frame_branch(p).mr == "1");
-        std::cout << "    X on qm  -> syndrome 1 (anticommutes with Z)\n";
+        // One fault location on {qd[0], qm[0]} makes every 2-qubit Pauli
+        // reachable, so the branch split has to sort all sixteen by the x
+        // component of qm[0] and nothing else.
+        write_qasm(h11 + "cx qd[0], qm[0];\n");
+        QasmPropagation p = propagate_qasm(kTmp, 1, /*reset_measure=*/false);
+
+        const SyndromeBranch *zero = nullptr;
+        const SyndromeBranch *one  = nullptr;
+        for (const SyndromeBranch &br : p.branches()) {
+            if (br.t != 1) continue;
+            if (br.mr == "0") zero = &br; else one = &br;
+        }
+        assert(zero && one);
+        assert(zero->set.size() == 8.0 && one->set.size() == 8.0);
+
+        // X and Y anticommute with Z and flip the outcome; I and Z do not.
+        assert(one->set.contains("IX")  && one->set.contains("IY"));
+        assert(zero->set.contains("II") && zero->set.contains("IZ"));
+        // and the data qubit has no say in it
+        assert(zero->set.contains("XI") && zero->set.contains("YI"));
+        std::cout << "    syndrome is the x component of qm, and only of qm\n";
     }
     {
-        write_qasm(h11 + "z qm[0];\n");   // frame IZ
-        QasmPropagation p = propagate_qasm(kTmp, 0);
-        assert(frame_branch(p).mr == "0");
-        std::cout << "    Z on qm  -> syndrome 0 (commutes with Z: harmless)\n";
-    }
-    {
-        write_qasm(h11 + "x qm[0];\nz qm[0];\n");   // frame IY
-        QasmPropagation p = propagate_qasm(kTmp, 0);
-        assert(frame_branch(p).mr == "1");
-        std::cout << "    Y on qm  -> syndrome 1\n";
-    }
-    {
-        write_qasm(h11 + "h qd[0];\n");   // frame II
-        QasmPropagation p = propagate_qasm(kTmp, 0);
-        assert(frame_branch(p).mr == "0");
-        std::cout << "    I on qm  -> syndrome 0\n";
-    }
-    {
-        // An h in front of the measurement turns a Z error into a visible one.
-        write_qasm(h11 + "z qm[0];\nh qm[0];\n");   // IZ -> conjugate by H -> IX
-        QasmPropagation p = propagate_qasm(kTmp, 0);
-        assert(frame_branch(p).mr == "1");
-        std::cout << "    z then h on qm -> syndrome 1 (h exposes a Z error)\n";
-    }
-    {
-        // mr[j] follows qm[j], left to right.
-        write_qasm("OPENQASM 3.0;\nqubit[1] qd;\nqubit[2] qm;\nx qm[1];\n");
-        QasmPropagation p = propagate_qasm(kTmp, 0);
-        assert(frame_branch(p).mr == "01");
+        // Two measurement qubits, a fault location on the second one only:
+        // the record must read "01", not "10".
+        write_qasm("OPENQASM 3.0;\nqubit[1] qd;\nqubit[2] qm;\ncx qd[0], qm[1];\n");
+        QasmPropagation p = propagate_qasm(kTmp, 1, /*reset_measure=*/false);
+        bool saw = false;
+        for (const SyndromeBranch &br : p.branches()) {
+            if (br.t == 1 && br.set.contains("IIX")) { assert(br.mr == "01"); saw = true; }
+        }
+        assert(saw);
         std::cout << "    mr[j] corresponds to qm[j]: X on qm[1] -> \"01\"\n";
     }
 

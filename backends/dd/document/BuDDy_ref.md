@@ -250,8 +250,9 @@ symbolic model checking 套用 transition relation)。
 把 `r` 裡 `var`(一個「變數集合」,用正/負 literal 的 conjunction 描述,例如
 `bdd_ithvar(1) & bdd_nithvar(3)` 代表「變數1限制為 true、變數3限制為
 false」)列出的變數限制成常數。官方文件也提到:如果 `g_i` 是單一變數,直接用
-`bdd_compose` 比 `bdd_restrict`(組合兩次 restrict)更有效率,這正是這個專案
-`apply_X`/`apply_Z` 選 `bdd_compose` 而不是 `bdd_restrict` 的原因。
+`bdd_compose` 比 `bdd_restrict`(組合兩次 restrict)更有效率。(這一點原本用於
+`apply_X`/`apply_Z`;那兩個現在是 conjugation,在這個不追蹤相位的表示法上等於
+identity,已不再呼叫任何 BDD 運算。)
 
 ---
 
