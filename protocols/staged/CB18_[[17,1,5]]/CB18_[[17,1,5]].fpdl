@@ -24,9 +24,8 @@ protocol CB_18_[[17,1,5]]:
     se:
         FSE_b {
             file: "./FSE_b.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             g: [[Z1, Z2, Z3, Z4],
              [X1, X2, X3, X4],
              [Z1, Z3, Z5, Z6],
@@ -47,176 +46,144 @@ protocol CB_18_[[17,1,5]]:
 
         g1f {
             file: "./Z1Z2Z3Z4_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z1,Z2,Z3,Z4]]
             #-flag: 2
         }
 
         g2f {
             file: "./X1X2X3X4_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X1,X2,X3,X4]]
             #-flag: 2
         }
 
         g3f {
             file: "./Z1Z3Z5Z6_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z1,Z3,Z5,Z6]]
             #-flag: 2
         }
 
         g4f {
             file: "./X1X3X5X6_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X1,X3,X5,X6]]
             #-flag: 2
         }
 
         g5f {
             file: "./Z5Z6Z9Z10_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z5,Z6,Z9,Z10]]
             #-flag: 2
         }
 
         g6f {
             file: "./X5X6X9X10_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X5,X6,X9,X10]]
             #-flag: 2
         }
 
         g7f {
             file: "./Z7Z8Z11Z12_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z7,Z8,Z11,Z12]]
             #-flag: 2
         }
 
         g8f {
             file: "./X7X8X11X12_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X7,X8,X11,X12]]
             #-flag: 2
         }
 
         g9f {
             file: "./Z9Z10Z13Z14_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z9,Z10,Z13,Z14]]
             #-flag: 2
         }
 
         g10f {
             file: "./X9X10X13X14_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X9,X10,X13,X14]]
             #-flag: 2
         }
 
         g11f {
             file: "./Z11Z12Z15Z16_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z11,Z12,Z15,Z16]]
             #-flag: 2
         }
 
         g12f {
             file: "./X11X12X15X16_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X11,X12,X15,X16]]
             #-flag: 2
         }
 
         g13f {
             file: "./Z8Z12Z16Z17_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z8,Z12,Z16,Z17]]
             #-flag: 2
         }
 
         g14f {
             file: "./X8X12X16X17_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X8,X12,X16,X17]]
             #-flag: 2
         }
 
         g15f {
             file: "./Z3Z4Z6Z7Z10Z11Z14Z15_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[Z3,Z4,Z6,Z7,Z10,Z11,Z14,Z15]]
             #-flag: 2
         }
 
         g16f {
             file: "./X3X4X6X7X10X11X14X15_f.qasm"
-            qp: data
+            qd: data
             qm: syn
-            cm: m
             qf: flag
-            cf: f
             g: [[X3,X4,X6,X7,X10,X11,X14,X15]]
             #-flag: 2
         }
