@@ -131,9 +131,7 @@ def draw(circuit, destination: Path, fmt: str, fold: int, scale: float) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     if fmt == "text":
         destination.write_text(
-            str(circuit.draw(output="text", fold=fold if fold > 0 else 200)) + "\n",
-            encoding="utf-8",
-        )
+            str(circuit.draw(output="text", fold=fold)) + "\n", encoding="utf-8")
         return
 
     figure = circuit.draw(output="mpl", fold=fold, scale=scale, style="clifford")
@@ -154,9 +152,9 @@ def main() -> int:
         "--format", choices=("png", "text", "both"), default="png",
         help="png needs matplotlib; text is a plain-text diagram (default: png)")
     parser.add_argument(
-        "--fold", type=int, default=26,
-        help="wrap the diagram after this many columns; -1 for one long row "
-             "(default: 26)")
+        "--fold", type=int, default=-1,
+        help="wrap the diagram after this many columns; -1 keeps the circuit on "
+             "one uninterrupted row (default: -1)")
     parser.add_argument(
         "--scale", type=float, default=1.0, help="png scale factor (default: 1.0)")
     parser.add_argument(
