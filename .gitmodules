@@ -1,0 +1,3 @@
+[submodule "external/SPBDD"]
+	path = external/SPBDD
+	url = https://github.com/jtsai1120/SPBDD.git

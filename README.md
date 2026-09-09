@@ -25,6 +25,7 @@
 ```
 CMakeLists.txt
 cmake/              BuDDy、SPBDD(與 CUDD 版所需的 CUDD)的取得與建置
+external/SPBDD/     SPBDD 函式庫,submodule,釘在測過的 commit
 docs/               FPDL 與 parser 的說明,samples/ 是文件裡指令的產出範例
 protocols/          協定測資,一個目錄一個協定(.fpdl + 它引用的 .qasm)
 include/fpdl/       前端:協定解析、路徑圖
@@ -39,24 +40,39 @@ backends/spbdd/     同一個模型,改用 SPBDD 函式庫實作(BuDDy 或 CUDD 
 ## 建置
 
 ```bash
+git clone --recurse-submodules <this repo>     # SPBDD 是 submodule
 cmake -S . -B build
 cmake --build build -j
 ctest --test-dir build
 ```
 
+已經 clone 過的話補一句就好:
+
+```bash
+git submodule update --init
+```
+
 BuDDy(`dd` backend 的依賴)由 `cmake/BuDDy.cmake` 直接當一般 CMake target 編,不需要
 autotools;已有 checkout 可用 `-DFTEC_BUDDY_SOURCE_DIR=<path>` 指過去省下下載。
 
-`spbdd` backend 預設也不需要 autotools:**SPBDD 的 `main` 現在是 BuDDy 版**,而那個 BuDDy
-就是上面同一個 target(所以一個行程裡只有一份,兩個 backend 才能連進同一個執行檔)。
+**SPBDD 由 `external/SPBDD` 這個 submodule 提供**,釘在這個 repo 測過的那個 commit 上。
+它預設也不需要 autotools:SPBDD 的 `main` 現在是 BuDDy 版,而那個 BuDDy 就是上面同一個
+target(所以一個行程裡只有一份,兩個 backend 才能連進同一個執行檔)。
+
+取得來源有三層,依序:`-DFTEC_SPBDD_SOURCE_DIR=<path>`(自己的工作副本)→ submodule →
+FetchContent。最後一層是為了讓忘記 `--recurse-submodules` 的人仍然編得起來,而不是撞上
+一個看不懂的 configure 錯誤;真的走到那層時 configure 會警告。用了哪一層都會印出來。
 
 SPBDD 有兩份同一套 API 的實作,`cmake/SPBDD.cmake` **不從分支名判斷**,而是讀
 `manager.hpp` 裡有沒有 `DdManager` 來認,configure 時會印出來:
 
 ```bash
-cmake -S . -B build                                          # main:BuDDy 版
-cmake -S . -B build -DFTEC_SPBDD_GIT_TAG=try/CUDD_backend    # CUDD 版
+cmake -S . -B build                                          # submodule(BuDDy 版)
+git -C external/SPBDD checkout try/CUDD_backend              # 換成 CUDD 版
+cmake -S . -B build
 ```
+
+`FTEC_SPBDD_GIT_TAG` 只在**沒有 submodule、退回 FetchContent 時**才有作用。
 
 只有 CUDD 版**要 autoconf / automake / libtool**(CUDD 的 `config.h` 是幾十個探測出來的
 巨集,手寫不划算):

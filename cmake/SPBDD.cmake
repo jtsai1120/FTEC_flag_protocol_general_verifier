@@ -7,24 +7,40 @@
 # generating it by hand is not the small job it was there. cmake/build_cudd.sh
 # runs that build and explains the one non-obvious step in it.
 #
-# Set FTEC_SPBDD_SOURCE_DIR / FTEC_CUDD_SOURCE_DIR to build from checkouts you
-# already have instead of fetching them (useful offline, or when iterating on
-# SPBDD itself).
+# SPBDD comes from the submodule at external/SPBDD, which pins the exact
+# commit this repository was tested against. Set FTEC_SPBDD_SOURCE_DIR /
+# FTEC_CUDD_SOURCE_DIR to build from a checkout you already have instead
+# (useful offline, or when iterating on SPBDD itself).
 
 set(FTEC_SPBDD_SOURCE_DIR "" CACHE PATH
-    "Existing SPBDD checkout to build from; fetched automatically when empty")
+    "Existing SPBDD checkout to build from; overrides the external/SPBDD submodule")
 set(FTEC_CUDD_SOURCE_DIR "" CACHE PATH
     "Existing CUDD checkout to build from; fetched automatically when empty")
 # SPBDD has two implementations of one public API. As of 2026-09-09 `main` is
 # the BuDDy-backed one and `try/CUDD_backend` is the CUDD-backed one; they
 # swapped places partway through this work, which is why nothing below decides
-# anything from the branch name -- see the detection further down.
+# anything from the branch name -- see the detection further down. Only
+# consulted when the submodule is absent and the source has to be fetched.
 set(FTEC_SPBDD_GIT_TAG "main" CACHE STRING
-    "Which SPBDD branch or tag to build; try/CUDD_backend is the CUDD-backed one")
+    "SPBDD branch to fetch when external/SPBDD is not checked out")
 
 include(FetchContent)
 
 # --- sources ---------------------------------------------------------------
+#
+# Three ways to get SPBDD, in this order:
+#
+#   1. FTEC_SPBDD_SOURCE_DIR, when someone is pointing the build at a working
+#      copy of their own.
+#   2. the external/SPBDD submodule, which is the normal case and pins the
+#      commit this repository was tested against.
+#   3. FetchContent, so that `git clone` without --recurse-submodules still
+#      produces a working build rather than a confusing configure error.
+#
+# Which one was used is printed, because "why did it build a different SPBDD
+# than I thought" is otherwise an unpleasant afternoon.
+
+set(_spbdd_submodule "${CMAKE_CURRENT_LIST_DIR}/../external/SPBDD")
 
 if(FTEC_SPBDD_SOURCE_DIR)
     if(NOT EXISTS "${FTEC_SPBDD_SOURCE_DIR}/include/spbdd/spbdd.hpp")
@@ -33,8 +49,19 @@ if(FTEC_SPBDD_SOURCE_DIR)
             "SPBDD checkout (no include/spbdd/spbdd.hpp)")
     endif()
     set(_spbdd_src "${FTEC_SPBDD_SOURCE_DIR}")
-    message(STATUS "SPBDD: using ${_spbdd_src}")
+    message(STATUS "SPBDD: using ${_spbdd_src} (FTEC_SPBDD_SOURCE_DIR)")
+elseif(EXISTS "${_spbdd_submodule}/include/spbdd/spbdd.hpp")
+    get_filename_component(_spbdd_src "${_spbdd_submodule}" ABSOLUTE)
+    message(STATUS "SPBDD: using the external/SPBDD submodule")
 else()
+    # An empty external/SPBDD means the clone skipped submodules. Say so, since
+    # the fix is one command and the alternative is fetching a different commit
+    # from the one this repository pins.
+    if(EXISTS "${_spbdd_submodule}")
+        message(WARNING
+            "external/SPBDD is empty -- run `git submodule update --init` to build "
+            "the pinned commit. Falling back to fetching ${FTEC_SPBDD_GIT_TAG}.")
+    endif()
     FetchContent_Declare(spbdd
         GIT_REPOSITORY https://github.com/jtsai1120/SPBDD.git
         GIT_TAG        ${FTEC_SPBDD_GIT_TAG}
